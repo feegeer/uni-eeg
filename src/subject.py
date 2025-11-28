@@ -70,25 +70,15 @@ class Subject:
 
     @staticmethod
     def from_tsv_row(bids_root, row: Mapping[Any]) -> "Subject":
-        player1 = Player(
-          Gender(row["player1_gender"]),
-          int(row["player1_age"]),
-          Handedness(row["player1_handedness"]),
-          [ch.strip() for ch in row["player1_pre_processing_channels_fixed"].split(",") if ch.strip()],
-        )
-        player2 = Player(
-          Gender(row["player2_gender"]),
-          int(row["player2_age"]),
-          Handedness(row["player2_handedness"]),
-          [ch.strip() for ch in row["player2_pre_processing_channels_fixed"].split(",") if ch.strip()],
-        )
+        player1 = Player(Gender(row["player1_gender"]), int(row["player1_age"]), Handedness(row["player1_handedness"]),
+                         [ch.strip() for ch in row["player1_pre_processing_channels_fixed"].split(",") if ch.strip()])
+
+        player2 = Player(Gender(row["player2_gender"]), int(row["player2_age"]), Handedness(row["player2_handedness"]),
+                         [ch.strip() for ch in row["player2_pre_processing_channels_fixed"].split(",") if ch.strip()])
+
         events = get_events_for_subject(bids_root, row["participant_id"])
 
-        bids_path = mne_bids.BIDSPath(
-          subject=row["participant_id"].replace("sub-", ""),
-          task="RPS",
-          root=bids_root,
-        )
+        bids_path = mne_bids.BIDSPath(subject=row["participant_id"].replace("sub-", ""), task="RPS", root=bids_root)
 
         # the raws are huge (> 3GB), we should consider loading them lazily.
         raw = mne_bids.read_raw_bids(bids_path)
@@ -146,13 +136,12 @@ class Subject:
                     # Interpolate bad channels
                     player_raw.interpolate_bads(reset_bads=True)
 
-                    print(
-                      f"Interpolated bad channels for {player_raw.info['subject_info']['his_id'] if 'subject_info' in player_raw.info else 'player'}: {player_raw.info['bads']}"
-                    )
+                    print("Interpolated bad channels for {}: {}".format(
+                      player_raw.info['subject_info']['his_id'] if 'subject_info' in player_raw.info else 'player',
+                      player_raw.info['bads']))
                 else:
-                    print(
-                      f"No bad channels to interpolate for {player_raw.info['subject_info']['his_id'] if 'subject_info' in player_raw.info else 'player'}"
-                    )
+                    print("No bad channels to interpolate for {}".format(
+                      player_raw.info['subject_info']['his_id'] if 'subject_info' in player_raw.info else 'player'))
             else:
                 print(f"No preprocessing channels listed for player")
 
@@ -191,15 +180,7 @@ class Subject:
             stim_on = np.array([e.onset_sample for e in self.events], dtype=int)
             events = np.column_stack([stim_on, np.zeros(len(stim_on), int), np.ones(len(stim_on), int)])
 
-            epochs = mne.Epochs(
-              player_raw,
-              events,
-              event_id=1,
-              tmin=tmin,
-              tmax=tmax,
-              baseline=None,
-              preload=True,
-            )
+            epochs = mne.Epochs(player_raw, events, event_id=1, tmin=tmin, tmax=tmax, baseline=None, preload=True)
 
             if player_num == 1:
                 self.player1_epochs = epochs
@@ -256,15 +237,7 @@ def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Eve
         reader = csv.DictReader(tsvfile, delimiter="\t")
         for row in reader:
             events.append(
-              Event(
-                float(row["onset"]),
-                float(row["duration"]),
-                int(row["onset_sample"]),
-                int(row["trial_num"]),
-                Response(int(row["player1_resp"])),
-                Response(int(row["player2_resp"])),
-                float(row["player1_rt"]),
-                float(row["player2_rt"]),
-                Outcome(int(row["outcome"])),
-              ))
+              Event(float(row["onset"]), float(row["duration"]), int(row["onset_sample"]), int(row["trial_num"]),
+                    Response(int(row["player1_resp"])), Response(int(row["player2_resp"])), float(row["player1_rt"]),
+                    float(row["player2_rt"]), Outcome(int(row["outcome"]))))
     return events
