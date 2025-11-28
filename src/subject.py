@@ -1,3 +1,4 @@
+import collections
 from collections.abc import Mapping
 import csv
 import dataclasses
@@ -93,6 +94,23 @@ class Subject:
         player2_raw = raw.copy().pick(player2_channels)
 
         return Subject(row["participant_id"], player1, player2, events, player1_raw, player2_raw)
+
+    def get_overall_result(self) -> Outcome:
+        player1_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER1_WINS)
+        player2_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER2_WINS)
+
+        if player1_wins == player2_wins:
+            return Outcome.DRAW
+
+        return Outcome.PLAYER1_WINS if player1_wins > player2_wins else Outcome.PLAYER2_WINS
+
+    def get_game_outcomes(self) -> dict[Outcome, int]:
+        return collections.Counter(event.outcome for event in self.events)
+
+    def get_most_mid_least_played_responses(self) -> tuple[list[tuple[Outcome, int]], list[tuple[Outcome, int]]]:
+        player1_responses = collections.Counter(event.player1_response for event in self.events)
+        player2_responses = collections.Counter(event.player2_response for event in self.events)
+        return (player1_responses.most_common(), player2_responses.most_common())
 
     def preprocess(self) -> None:
         # Maybe throw away, since we want to plot all intermediate steps in a Jupyter notebook later on
