@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "awscli>=1.43.1",
+    "matplotlib>=3.10.7",
     "mne==1.10.2",
     "mne-bids==0.17.0",
     "mne-bids-pipeline==1.9.0",
