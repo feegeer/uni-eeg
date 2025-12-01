@@ -5,10 +5,11 @@ import subject
 
 def main():
     bids_dataset = subject.BidsDataset.get_from(
-        pathlib.Path(r"C:\Users\poten\uni-eeg\src\ds006761")
+        pathlib.Path(r"src\ds006761")
     )
     # bids_dataset = subject.BidsDataset.get_from(pathlib.Path("ds006761"))
     bids_dataset.preprocess()
+    # bids_dataset.inspect_derivatives()
 
 def verify_output(output_dir, pair_num="01", player_num=1):
     """Loads and prints key information for a processed Epochs file."""
@@ -42,12 +43,12 @@ def verify_output(output_dir, pair_num="01", player_num=1):
         print("Montage Check: info['dig'] is EMPTY (FAIL).")
 
 if __name__ == "__main__":
-    # main()
+    main()
     # Example usage (assuming your ds006761 folder is the root):
     output_path = pathlib.Path("C:/Users/poten/uni-eeg/src/ds006761/derivatives")
 
     # Verify Player 1 (no bad channels specified in metadata)
-    verify_output(output_path, pair_num="01", player_num=1)
+    # verify_output(output_path, pair_num="01", player_num=1)
 
     # Verify Player 2 (bad channel T8 specified in metadata)
-    verify_output(output_path, pair_num="01", player_num=2)
+    # verify_output(output_path, pair_num="01", player_num=2)
