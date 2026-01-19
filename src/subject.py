@@ -14,15 +14,14 @@ from typing import Any
 import dataclasses
 import enum
 
-
 # --- Global Constants & Setup (Mimicking FieldTrip Layout/Geometry Loading) ---
-# The standard BioSemi codes in order (A1-A32 then B1-B32) corresponding 
+# The standard BioSemi codes in order (A1-A32 then B1-B32) corresponding
 # to the channel sequence used by FieldTrip's biosemi64.lay template.
 BIOSEMI_ORDERED_CODES = [
-    'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 
-    'A17', 'A18', 'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26', 'A27', 'A28', 'A29', 'A30', 'A31', 'A32',
-    'B1', 'B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 
-    'B17', 'B18', 'B19', 'B20', 'B21', 'B22', 'B23', 'B24', 'B25', 'B26', 'B27', 'B28', 'B29', 'B30', 'B31', 'B32'
+  'A1', 'A2', 'A3', 'A4', 'A5', 'A6', 'A7', 'A8', 'A9', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18',
+  'A19', 'A20', 'A21', 'A22', 'A23', 'A24', 'A25', 'A26', 'A27', 'A28', 'A29', 'A30', 'A31', 'A32', 'B1', 'B2', 'B3',
+  'B4', 'B5', 'B6', 'B7', 'B8', 'B9', 'B10', 'B11', 'B12', 'B13', 'B14', 'B15', 'B16', 'B17', 'B18', 'B19', 'B20',
+  'B21', 'B22', 'B23', 'B24', 'B25', 'B26', 'B27', 'B28', 'B29', 'B30', 'B31', 'B32'
 ]
 
 # Get the standard 10-20 names from MNE's built-in montage (64 channels)
@@ -47,11 +46,12 @@ except FileNotFoundError:
 # 2. Create a custom MNE montage from the .mat data.
 # Note: Assuming the data is in centimeters (cm) and converting to meters (m) as MNE expects meters.
 # If your data is already in meters, remove the division by 100.
-ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d / 100)) 
+ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d / 100))
 FULL_MNE_BISEOMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
 # COMPARISON (MATLAB): This MNE object now holds the 3D positions needed for ft_channelrepair.
 
 # --- Data Structures (Enums and Dataclasses) ---
+
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -111,12 +111,13 @@ class Subject:
         pid = row["participant_id"]
         # --- Parsing Player Metadata ---
         p1_bad = [ch.strip() for ch in row["player1_pre_processing_channels_fixed"].split(",") if ch.strip()]
-        player1 = Player(Gender(row["player1_gender"]), int(row["player1_age"]), Handedness(row["player1_handedness"]), p1_bad)
+        player1 = Player(Gender(row["player1_gender"]), int(row["player1_age"]), Handedness(row["player1_handedness"]),
+                         p1_bad)
         p2_bad = [ch.strip() for ch in row["player2_pre_processing_channels_fixed"].split(",") if ch.strip()]
-        player2 = Player(Gender(row["player2_gender"]), int(row["player2_age"]), Handedness(row["player2_handedness"]), p2_bad)
+        player2 = Player(Gender(row["player2_gender"]), int(row["player2_age"]), Handedness(row["player2_handedness"]),
+                         p2_bad)
         events = get_events_for_subject(bids_root, pid)
         return Subject(pid, player1, player2, events)
-
 
     def preprocess(self, bids_root: pathlib.Path, output_dir: pathlib.Path) -> None:
         """The main preprocessing pipeline, mirroring the structure of the MATLAB loop."""
@@ -125,17 +126,17 @@ class Subject:
         bids_path = mne_bids.BIDSPath(subject=self.id.replace("sub-", ""), task="RPS", root=bids_root)
         try:
             raw = mne_bids.read_raw_bids(bids_path, verbose=False)
-            raw.load_data() # Loads data into memory for processing
+            raw.load_data()  # Loads data into memory for processing
         except FileNotFoundError:
             print(f"  Skipping {self.id}: BIDS file not found.")
             return
-        
+
         # 2. Split and Rename Channels (MATLAB's channel selection + renaming via .lay file)
         raw_p1, raw_p2 = self._prepare_players(raw)
 
         # 3. Clean up the massive original Raw object immediately to free RAM
         del raw
-        gc.collect() 
+        gc.collect()
 
         # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair)
         self._interpolate(raw_p1, self.player1, "Player 1")
@@ -154,7 +155,7 @@ class Subject:
 
         # 8. Force Garbage Collection
         del raw_p1, raw_p2, epochs_p1, epochs_p2
-        gc.collect() 
+        gc.collect()
         print(f"  Done {self.id}. Memory cleared.\n")
 
     def _prepare_players(self, raw):
@@ -162,7 +163,7 @@ class Subject:
         # Channel selection logic matching the MATLAB script's use of '2-' for P1 and '1-' for P2
         p1_chans = [ch for ch in raw.ch_names if ch.startswith("2-")]
         p2_chans = [ch for ch in raw.ch_names if ch.startswith("1-")]
-        
+
         p1_idx = mne.pick_channels(raw.ch_names, p1_chans)
         p2_idx = mne.pick_channels(raw.ch_names, p2_chans)
         info_p1 = mne.pick_info(raw.info, p1_idx)
@@ -175,25 +176,25 @@ class Subject:
             # 1. Strip player prefix ('2-A1' -> 'A1')
             rename_map_prefix = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
             inst.rename_channels(rename_map_prefix)
-            
+
             # 2. Rename using the dynamically generated map (from .lay equivalent)
             final_map = {k: v for k, v in BIOSEMI_CODE_TO_1020_LABEL.items() if k in inst.ch_names}
             if final_map:
-                inst.rename_channels(final_map) 
+                inst.rename_channels(final_map)
                 # COMPARISON (MATLAB): Equivalent to 'data_epoch.label(1:64) = layout.label(1:64);'
-            
+
             # 3. Set channel types and pick only the final EEG channels
-            inst.set_channel_types({ch: 'eeg' for ch in inst.ch_names}, verbose=False) 
+            inst.set_channel_types({ch: 'eeg' for ch in inst.ch_names}, verbose=False)
             eeg_chans = [ch for ch in inst.ch_names if ch in FULL_MNE_BISEOMI_MONTAGE.ch_names]
-            inst.pick_channels(eeg_chans, ordered=True, verbose=False) 
-            
+            inst.pick_channels(eeg_chans, ordered=True, verbose=False)
+
             # Use the canonical list of channels from the 10-20 system (64 channels)
             montage_1020 = mne.channels.make_standard_montage("standard_1020")
-            
+
             # Drop any non-EEG/unmapped channels (e.g., EOGs, references)
             eeg_chans = [ch for ch in inst.ch_names if ch in montage_1020.ch_names]
             inst.pick_channels(eeg_chans, ordered=True, verbose=False)
-            
+
             # 4. Apply Montage (sets the 3D coordinates from the .mat file)
             inst.set_montage(FULL_MNE_BISEOMI_MONTAGE, match_case=False, verbose=False)
             # COMPARISON (MATLAB): This links the new 10-20 channel names to the 3D coordinates from 'biosemi64.mat'.
@@ -213,7 +214,9 @@ class Subject:
     def _create_epochs(self, raw):
         """Converts continuous data into segmented trials (MATLAB's ft_preprocessing with cfg.trl)."""
         onset_times = [e.onset for e in self.events]
-        annot = mne.Annotations(onset=onset_times, duration=[0]*len(onset_times), description=['trial_start']*len(onset_times))
+        annot = mne.Annotations(onset=onset_times,
+                                duration=[0] * len(onset_times),
+                                description=['trial_start'] * len(onset_times))
         raw.set_annotations(annot)
         # Create event array from annotations
         events, _ = mne.events_from_annotations(raw, verbose=False)
@@ -225,10 +228,10 @@ class Subject:
         pair_num = self.id.replace('sub-', '')
         out_folder = output_dir / "derivatives"
         out_folder.mkdir(parents=True, exist_ok=True)
-        
+
         p1_fname = out_folder / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
         p2_fname = out_folder / f"pair-{pair_num}_player-2_task-RPS_eeg_epo.fif"
-        
+
         ep1.save(p1_fname, overwrite=True, verbose=False)
         ep2.save(p2_fname, overwrite=True, verbose=False)
 
@@ -286,20 +289,22 @@ class BidsDataset:
             evoked_p1 = epochs_p1.average()
 
             # 3. Plot the Evoked Response with Global Field Power (GFP)
-            # This plot shows the time series for all channels, and the GFP curve 
+            # This plot shows the time series for all channels, and the GFP curve
             # (black line) is a good indicator of overall signal quality.
-            evoked_p1.plot(spatial_colors=True, gfp=True, zorder='std', 
-                           titles=f"Player 1 Evoked Response (Subject {pair_num})", 
+            evoked_p1.plot(spatial_colors=True,
+                           gfp=True,
+                           zorder='std',
+                           titles=f"Player 1 Evoked Response (Subject {pair_num})",
                            window_title=f"ERP and GFP for Subject {pair_num}")
-            
+
             # 4. Show the topographic map at the peak of the evoked response (e.g., around 400ms)
-            evoked_p1.plot_topomap(times=[0.1, 0.4], 
+            evoked_p1.plot_topomap(times=[0.1, 0.4],
                                    title=f"Topographies for Subject {pair_num}",
                                    vmax='auto',
                                    colorbar=False)
-            
+
             print("Inspection plots generated. Close the MNE windows to continue.")
-            mne.viz.tight_layout() # Ensures plots fit the screen
+            mne.viz.tight_layout()  # Ensures plots fit the screen
             mne.viz.show()
 
         except Exception as e:
@@ -313,6 +318,7 @@ class BidsDataset:
 
 # --- Utility Functions ---
 
+
 def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Event]:
     events = []
     fname = bids_root / subject_id / "eeg" / f"{subject_id}_task-RPS_events.tsv"
@@ -321,9 +327,7 @@ def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Eve
             reader = csv.DictReader(tsvfile, delimiter="\t")
             for row in reader:
                 events.append(
-                    Event(float(row["onset"]), float(row["duration"]), int(row["onset_sample"]), 
-                          int(row["trial_num"]), Response(int(row["player1_resp"])), Response(int(row["player2_resp"])), 
-                          float(row["player1_rt"]), float(row["player2_rt"]), Outcome(int(row["outcome"]))
-                    )
-                )
+                  Event(float(row["onset"]), float(row["duration"]), int(row["onset_sample"]), int(row["trial_num"]),
+                        Response(int(row["player1_resp"])), Response(int(row["player2_resp"])),
+                        float(row["player1_rt"]), float(row["player2_rt"]), Outcome(int(row["outcome"]))))
     return events
