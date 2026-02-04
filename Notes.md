@@ -29,3 +29,24 @@
   - Why: EEG microstates are semi-stable topographic patterns that represent "atoms of thought."
   - How: Segment the Decision phase into microstates. You could then test if "Winners" and "Losers" differ in the duration or transition probabilities of specific microstates before they make a move.
 
+
+# Felipe's Notes:
+- To test whether the EEG data tells us something about the decision-making process in a competitive setting, the researchers picked the game Rock-Paper-Scisors; 
+- In this game, the optimal strategy is to be completly random;
+- In theory, if a player is not playing randomly, they must have some bias in their decision-making process/knowledge representation;
+  - For example: remembering what the opponent played in the last few rounds, and trying to predict based on that;
+- Question: can we "see" this "bias" in the player's EEG data? if we can "see" it, can we also predict the player's decision based on it?
+- To answer this question, the researchers picked 4 metrics:
+  1. Predict the player's decision;
+  2. Predict the opponent's decision;
+  3. Predict the player's decision in the previous round;
+  4. Predict the opponent's decision in the previous round;
+- Experiment goal: given the raw eeg data for a participant for a single game (Decision (2s), Response (2s), and Feedback (1s)), how accuratelly are we based on the 4 metrics?
+  1. If the prediction accuracy always hovers around 33%, then the EEG data contains no information about the decision-making process;
+  2. If the prediction accuracy does not always hover around 33%, then the EEG data contains some information about the decision-making process;
+
+My own (Felipe) understanding of expected results:
+- If the accuracy for the previous trial (metrics 3 and 4) is higher than 33%, then the player's strategy is not complete random --> the player is still thinking about the previous trial --> modeling previous trial to make current decision;
+- If the accuracy for the player's decision in the current trial (metric 1) is higher than 33%, then the EEG data contains some information --> if it was around 33%, I think all the other metrics would become irrelevant (luck-based predictions)
+- If the accuracy for the opponent's decision in the current tiral (metric 2) is higher than 33%, then the player can successfully predict the opponent's decision --> opponent is not random AND the player is ALSO not random --> both players are playing suboptimal strategies;
+- if metrics 2, 3, 4 are all around 33% but metric 1 is above that, then the player is playing truly random;
