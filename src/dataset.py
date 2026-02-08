@@ -1,15 +1,15 @@
-import csv
-import enum
-import pathlib
-import gc
+import collections
 from collections.abc import Mapping
+import csv
+import dataclasses
+import enum
+import gc
+import pathlib
 from typing import Any
+
 import mne
 import mne_bids
 import scipy.io
-from typing import Any
-import dataclasses
-import enum
 
 # --- Global Constants & Setup (Mimicking FieldTrip Layout/Geometry Loading) ---
 # The standard BioSemi codes in order (A1-A32 then B1-B32) corresponding
@@ -119,6 +119,98 @@ class Subject:
                          p2_bad)
         events = get_events_for_subject(bids_root, pid)
         return Subject(pid, player1, player2, events)
+
+    def get_overall_outcome(self) -> Outcome:
+        player1_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER1_WINS)
+        player2_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER2_WINS)
+
+        if player1_wins == player2_wins:
+            return Outcome.DRAW
+
+        return Outcome.PLAYER1_WINS if player1_wins > player2_wins else Outcome.PLAYER2_WINS
+
+    def get_winners_outcome_distribution(self) -> tuple[float, float, float]:
+        outcomes = [
+          event.outcome for event in self.events
+          if not (event.player1_response == Response.NO_RESPONSE or event.player2_response == Response.NO_RESPONSE)
+        ]
+        overall_outcome = self.get_overall_outcome()
+        winner_won = 0
+        winner_lost = 0
+        drawn = 0
+        for outcome in outcomes:
+            if outcome == overall_outcome:
+                winner_won += 1
+            elif outcome == Outcome.DRAW:
+                drawn += 1
+            else:
+                winner_lost += 1
+
+        scale = 100 / len(outcomes)
+        return winner_won * scale, winner_lost * scale, drawn * scale
+
+    def get_game_outcomes(self) -> dict[Outcome, int]:
+        return collections.Counter(event.outcome for event in self.events)
+
+    def get_most_mid_least_played_responses(self) -> tuple[dict[Outcome, int], dict[Outcome, int]]:
+        player1_responses = collections.Counter(
+          event.player1_response for event in self.events
+          if event.player1_response != Response.NO_RESPONSE and event.player2_response != Response.NO_RESPONSE)
+        player2_responses = collections.Counter(
+          event.player2_response for event in self.events
+          if event.player1_response != Response.NO_RESPONSE and event.player2_response != Response.NO_RESPONSE)
+        return dict(player1_responses.most_common()), dict(player2_responses.most_common())
+
+    def get_response_changes_distributions(self) -> tuple[list[float], list[float], list[float]]:
+        NUM_BLOCKS = 12
+        TRIALS_PER_BLOCK = 40
+
+        p1_win, p1_lose, p1_draw = [], [], []
+        p2_win, p2_lose, p2_draw = [], [], []
+
+        for block in range(NUM_BLOCKS):
+            block_start = block * TRIALS_PER_BLOCK
+            block_end = block_start + TRIALS_PER_BLOCK
+            block_events = self.events[block_start:block_end]
+
+            for t in range(1, TRIALS_PER_BLOCK):
+                prev = block_events[t - 1]
+                curr = block_events[t]
+
+                # Skip if any response missing (current or previous)
+                if (prev.player1_response == Response.NO_RESPONSE or curr.player1_response == Response.NO_RESPONSE
+                      or prev.player2_response == Response.NO_RESPONSE
+                      or curr.player2_response == Response.NO_RESPONSE):
+                    continue
+
+                # player 1
+                change_p1 = curr.player1_response != prev.player1_response
+
+                if prev.outcome == Outcome.DRAW:
+                    p1_draw.append(change_p1)
+                elif prev.outcome == Outcome.PLAYER1_WINS:
+                    p1_win.append(change_p1)
+                else:  # PLAYER2_WINS
+                    p1_lose.append(change_p1)
+
+                # player 2
+                change_p2 = curr.player2_response != prev.player2_response
+
+                if prev.outcome == Outcome.DRAW:
+                    p2_draw.append(change_p2)
+                elif prev.outcome == Outcome.PLAYER2_WINS:
+                    p2_win.append(change_p2)
+                else:  # PLAYER1_WINS
+                    p2_lose.append(change_p2)
+
+        def percent(changes: list[bool]) -> float:
+            return (sum(changes) / len(changes)) * 100 if changes else float("nan")
+
+        return (
+          [percent(p1_win), percent(p2_win)],  # after win
+          [percent(p1_lose), percent(p2_lose)],  # after loss
+          [percent(p1_draw), percent(p2_draw)],  # after draw
+        )
 
     def preprocess(self, bids_root: pathlib.Path, output_dir: pathlib.Path) -> None:
         """The main preprocessing pipeline, mirroring the structure of the MATLAB loop."""
