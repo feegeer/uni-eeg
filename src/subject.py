@@ -2,14 +2,11 @@ import csv
 import enum
 import pathlib
 import gc
-import collections
 from collections.abc import Mapping
 from typing import Any
-import numpy as np
 import mne
 import mne_bids
 import scipy.io
-import numpy.typing as npt
 from typing import Any
 import dataclasses
 import enum
@@ -36,7 +33,7 @@ BIOSEMI_CODE_TO_1020_LABEL = dict(zip(BIOSEMI_ORDERED_CODES, TEN_TWENTY_ORDERED_
 # CRITICAL: Replace 'path/to/biosemi64.mat' with the actual path to your file.
 # COMPARISON (MATLAB): Equivalent to 'load('biosemi64.mat');'
 try:
-    mat_contents = scipy.io.loadmat(r"src/biosemi64.mat")
+    mat_contents = scipy.io.loadmat("src/biosemi64.mat")
     # Assuming the coordinate array is stored under the key 'biosemi64' inside the .mat file.
     biosemi_coords_3d = mat_contents['biosemi64']
 except FileNotFoundError:
@@ -46,7 +43,7 @@ except FileNotFoundError:
 # 2. Create a custom MNE montage from the .mat data.
 # Note: Assuming the data is in centimeters (cm) and converting to meters (m) as MNE expects meters.
 # If your data is already in meters, remove the division by 100.
-ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d / 100))
+ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d / 14))
 FULL_MNE_BISEOMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
 # COMPARISON (MATLAB): This MNE object now holds the 3D positions needed for ft_channelrepair.
 
@@ -110,10 +107,14 @@ class Subject:
     def from_tsv_row(bids_root, row: Mapping[Any]) -> "Subject":
         pid = row["participant_id"]
         # --- Parsing Player Metadata ---
-        p1_bad = [ch.strip() for ch in row["player1_pre_processing_channels_fixed"].split(",") if ch.strip()]
+        p1_bad = [] if not row["player1_pre_processing_channels_fixed"] else [
+          ch.strip() for ch in row["player1_pre_processing_channels_fixed"].split(",") if ch.strip()
+        ]
         player1 = Player(Gender(row["player1_gender"]), int(row["player1_age"]), Handedness(row["player1_handedness"]),
                          p1_bad)
-        p2_bad = [ch.strip() for ch in row["player2_pre_processing_channels_fixed"].split(",") if ch.strip()]
+        p2_bad = [] if not row["player2_pre_processing_channels_fixed"] else [
+          ch.strip() for ch in row["player2_pre_processing_channels_fixed"].split(",") if ch.strip()
+        ]
         player2 = Player(Gender(row["player2_gender"]), int(row["player2_age"]), Handedness(row["player2_handedness"]),
                          p2_bad)
         events = get_events_for_subject(bids_root, pid)
@@ -263,7 +264,7 @@ class BidsDataset:
 
     def inspect_derivatives(self) -> None:
         """
-        Loads the saved epochs for the first processed subject and plots the 
+        Loads the saved epochs for the first processed subject and plots the
         Evoked Response (ERP) with Global Field Power (GFP) to check data quality.
         """
         if not self.subjects:
@@ -300,6 +301,7 @@ class BidsDataset:
             # 4. Show the topographic map at the peak of the evoked response (e.g., around 400ms)
             evoked_p1.plot_topomap(times=[0.1, 0.4],
                                    title=f"Topographies for Subject {pair_num}",
+                                   show_names=True,
                                    vmax='auto',
                                    colorbar=False)
 
