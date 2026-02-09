@@ -1,12 +1,55 @@
 import pathlib
 import mne
-import subject
+import dataset
+import visualization
 
 
 def main():
-    bids_dataset = subject.BidsDataset.get_from(pathlib.Path("ds006761"))
+    bids_dataset = dataset.BidsDataset.get_from(pathlib.Path("ds006761"))
     bids_dataset.preprocess()
     bids_dataset.inspect_derivatives()
+
+    # Figure 1c
+    data = [[], [], []]
+    for subject in bids_dataset.subjects:
+        percent_won, percent_lost, percent_drawn = subject.get_winners_outcome_distribution()
+        data[0].append(percent_won)
+        data[1].append(percent_lost)
+        data[2].append(percent_drawn)
+
+    labels = ["Winner wins", "Winner looses", "Draw"]
+    colors = ["#2d708e", "#404788", "#481567"]
+    yticks = list(range(20, 50, 5))
+    visualization.draw_raincloud_plot(data, labels, "Game outcome", colors, yticks, 100 / 3)
+
+    #  Figure 1d
+    most_mid_least_played = [
+      list(player.values()) for subject in bids_dataset.subjects
+      for player in subject.get_most_mid_least_played_responses()
+    ]
+    data = [[], [], []]
+    for player in most_mid_least_played:
+        player = [i * (100 / sum(player)) for i in player]
+        data[0].append(player[0])
+        data[1].append(player[1])
+        data[2].append(player[2])
+
+    labels = ["Most Played", "Mid Played", "Least Played"]
+    colors = ["#cb4149", "#f5dc4e", "#f78310"]
+    visualization.draw_raincloud_plot(data, labels, "Response played", colors, yticks, 100 / 3)
+
+    # Figure 1e
+    data = [[], [], []]
+    for subject in bids_dataset.subjects:
+        response_changes_after_win, response_changes_after_loss, response_changes_after_draw = subject.get_response_changes_distributions(
+        )
+        data[0] += response_changes_after_win
+        data[1] += response_changes_after_loss
+        data[2] += response_changes_after_draw
+    labels = ["After win", "After loss", "After draw"]
+    colors = ["#2d708e", "#404788", "#481567"]
+    yticks = list(range(20, 120, 20))
+    visualization.draw_raincloud_plot(data, labels, "Game-to-game response change", colors, yticks, 200 / 3)
 
 
 def verify_output(output_dir: pathlib.Path, pair_num: str = "01", player_num: int = 1):
