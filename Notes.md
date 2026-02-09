@@ -43,6 +43,11 @@
   - The New Analysis: Correlate the Markov Predictability Score (the behavior) with the Decoding Accuracy (the brain).
   - Class Project Angle: Does a more "predictable" player (high Markov score) also have a more "decodable" brain? This links the behavioral results in Figure 1 directly to the neural results in Figure 2, which the paper keeps somewhat separate.
 
+8. Identifying the "Loser's Regret" (Feedback-Related Negativity)
+- The paper found that losers uniquely carry information from the previous trial. An ERP analysis can pinpoint exactly when this happens during the feedback phase (when they see they lost).
+  - The New Analysis: Compare the Feedback-Related Negativity (FRN)—a dip in voltage about 250–350ms after an outcome—between winners and losers.
+  - Why it’s better: The paper shows that the brain represents the loss, but an ERP would show how strongly the brain reacts to it. A larger FRN in losers would suggest they are "monitoring" their errors more intensely than winners.
+
 ## Felipe's Notes
 
 - To test whether the EEG data tells us something about the decision-making process in a competitive setting, the researchers picked the game Rock-Paper-Scisors;
