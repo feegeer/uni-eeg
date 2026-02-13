@@ -1,177 +1,183 @@
 import os
-import pathlib
 import numpy as np
 import pandas as pd
 import mne
-from scipy.io import loadmat, savemat
+import h5py
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold
 from mne.decoding import SlidingEstimator, cross_val_multiscore
-"""
-note: index values are in matlab format
-Loop through each pair:
-    - load the behaviour of the pair --> events tsv file (with the responses)
-    - take player 1 reponse (columns 5), player 2 response (column 7), outcome (column 9)
-    - create new table for player 1 and another for player 2 such that each table has the following format:
-        [player's response | opponent's response | outcome | previous player's response | opponent's previous response]
-        note: make sure the player and opponent are relative to whom the table belongs to
-    Loop over the 2 players in the pair:
-        - load pre-processed (derivatives) EEG data for current player
-        - separate epoch into 3 parts: A = [-0.2 to 2.0], B = [1.8 to 4], and C = [3.8 to 5]
-        - shift time labes for part B and C to make 0 the start of the reponse (B) or start of the feedback (C)
-        - baseline-correction: use the [-0.2 0] as a baseline. Run the baseline corrections for the trial parts
-        - remove the first trial of each block (from events and eeg) --> no previous trial
-        - average the data into time bins, and re-combine into 1 dataset (rather than 3 parts)
-            time windows: A-[0:0.25:1.75;0.25:0.25:2], B-[0:0.25:1.75;0.25:0.25:2], C-[0:0.25:0.75;0.25:0.25:1] 
-        Loop over trials:
-            Loop over the time bins for this part
-                - get the data for time-points in this time bin and average
-            - add the data to the the big matrix (one that includes all the data)   
-        - convert the data from mne to whatever library has LDA  
-        - Loop over things we want to decode
-            1 = played self, 2 = played other, 3 = played self previous trial, 4 = played other previous trial
-
-"""
-
-# --- Parameters ---
-path_to_data = pathlib.Path("ds006761")
-pair_ids = [i for i in range(1, 35) if i not in [10, 23, 24]]
-num_trials = 480
-num_chan = 64
-SFREQ_BINNED = 4  # 4Hz = 1 sample every 250ms
 
 
-def load_pair_behaviour(pair):
+# --- Helper Functions ---
+def cosmo_style_average_samples(X, y, count=4, repeats=20, seed=1):
+    """
+    Replicates cosmo_average_samples: 
+    For each class, randomly averages 'count' samples, repeated 'repeats' times.
+    """
+    rng = np.random.default_rng(seed)
+    X_avg, y_avg = [], []
+    classes = np.unique(y)
+
+    for c in classes:
+        idx = np.where(y == c)[0]
+        if len(idx) < count: continue
+
+        for _ in range(repeats):
+            chosen_idx = rng.choice(idx, size=count, replace=True)
+            X_avg.append(np.mean(X[chosen_idx], axis=0))
+            y_avg.append(c)
+
+    return np.array(X_avg), np.array(y_avg)
+
+
+def process_behavior(path_to_data, pair):
+    """Extracts and formats behavioral data similar to the MATLAB logic."""
     tsv_path = os.path.join(path_to_data, f"sub-{pair:02d}", "eeg", f"sub-{pair:02d}_task-RPS_events.tsv")
-    events_df = pd.read_csv(tsv_path, sep="\t")
+    df = pd.read_csv(tsv_path, sep="\t")
 
-    # 1. Perspective Flip for Player 2 Outcomes
-    # 1=Draw, 2=P1 Wins, 3=P2 Wins. For P2: 2 becomes 'Loss' (3) and 3 becomes 'Win' (2)
-    p2_outcome = events_df['outcome'].replace({2: 3, 3: 2})
+    # Columns: 5=P1_resp, 7=P2_resp, 9=Outcome
+    # MATLAB uses indices, Python uses names/0-indexing
+    # Note: Adjust column names based on your actual TSV header
+    events = df.iloc[:, [4, 6, 8]].values
 
-    # 2. Vectorized construction for Player 1
-    p1_df = pd.DataFrame({
-      "this_player_response": events_df['player1_resp'],
-      "opponent_player_response": events_df['player2_resp'],
-      "outcome": events_df['outcome'],
-      # .shift(1) moves the whole column down to get "previous" trial
-      "this_player_previous_response": events_df['player1_resp'].shift(1, fill_value=-1),
-      "opponent_player_previous_response": events_df['player2_resp'].shift(1, fill_value=-1)
-    })
+    # Player 1 Perspective
+    p1_behav = np.zeros((len(events), 5))
+    p1_behav[:, :3] = events
+    p1_behav[1:, 3:] = events[:-1, :2]  # Previous trials
+    p1_behav[0, 3:] = np.nan
 
-    # 3. Vectorized construction for Player 2
-    p2_df = pd.DataFrame({
-      "this_player_response": events_df['player2_resp'],
-      "opponent_player_response": events_df['player1_resp'],
-      "outcome": p2_outcome,
-      "this_player_previous_response": events_df['player2_resp'].shift(1, fill_value=-1),
-      "opponent_player_previous_response": events_df['player1_resp'].shift(1, fill_value=-1)
-    })
+    # Player 2 Perspective
+    p2_behav = np.zeros((len(events), 5))
+    p2_behav[:, 0] = events[:, 1]  # Self = P2
+    p2_behav[:, 1] = events[:, 0]  # Other = P1
 
-    # 4. Critical: Reset previous trial data at block boundaries (every 40 trials)
-    # Without this, trial 41 would think trial 40 (end of previous block) is its history.
-    block_starts = np.arange(0, len(events_df), 40)
-    for df in [p1_df, p2_df]:
-        df.loc[block_starts, "this_player_previous_response"] = -1
-        df.loc[block_starts, "opponent_player_previous_response"] = -1
+    # Outcome flip: 1=Draw, 2=P1 Wins (P2 Loses), 3=P2 Wins (P2 Wins)
+    p2_behav[:, 2] = events[:, 2]
+    p2_behav[events[:, 2] == 2, 2] = 3
+    p2_behav[events[:, 2] == 3, 2] = 2
+    p2_behav[1:, 3:] = p2_behav[:-1, :2]
+    p2_behav[0, 3:] = np.nan
 
-    return p1_df, p2_df
+    return p1_behav, p2_behav
 
 
-# --- Loop Over Pairs ---
+# --- Main Script ---
+path_to_data = "ds006761"
+results_dir = os.path.join(path_to_data, "derivatives", "decoding_results")
+os.makedirs(results_dir, exist_ok=True)
+
+pair_ids = [i for i in range(1, 35) if i not in [10, 23, 24]]
+rem_idx = np.arange(0, 480, 40)  # Trials to remove (block starts)
+
 for pair in pair_ids:
-    print(f"Loading pair {pair}")
-    p1_events, p2_events = load_pair_behaviour(pair)
+    print(f"Processing Pair {pair}...")
+    p_behavs = process_behavior(path_to_data, pair)
 
-    for ppt in [1, 2]:
-        print(f"   ppt {ppt}")
+    for ppt_idx, behav_data in enumerate(p_behavs):
+        ppt = ppt_idx + 1
 
-        # Perspective shift for behavioral data
-        if ppt == 1:
-            behav = np.column_stack([raw_behav, np.full((num_trials, 2), np.nan)])
-            behav[1:, 3:] = raw_behav[:-1, :2]  # Previous trial
-        else:
-            behav = np.zeros((num_trials, 5))
-            behav[:, [0, 1]] = raw_behav[:, [1, 0]]  # Swap self/other
-            # Adjust outcome relative to player 2
-            p1_out = raw_behav[:, 2]
-            behav[p1_out == 1, 2] = 1  # Draw
-            behav[p1_out == 2, 2] = 3  # P1 win -> P2 lose
-            behav[p1_out == 3, 2] = 2  # P1 lose -> P2 win
-            behav[1:, 3:] = behav[:-1, :2]  # Previous trial
+        save_path = os.path.join(results_dir, f"sub-{pair:02d}_player-{ppt}_decoding.h5")
+        if os.path.exists(save_path): continue
 
-        fif_path = f"{path_to_data}/derivates/pair-{pair:02d}_player-{ppt:01d}_task-RPS_eeg.fif"
-        epochs = mne.read_epochs(fif_path, preload=True)
+        # Load preprocessed EEG
+        fname = f"pair-{pair:02d}_player-{ppt}_task-RPS_eeg.fif"
+        fpath = os.path.join(path_to_data, "derivatives", fname)
 
-        # --- Preprocessing & Windowing ---
-        # 1. Re-reference to Average
+        if not os.path.exists(fpath): continue
+
+        epochs = mne.read_epochs(fpath, preload=True)
         epochs.set_eeg_reference("average")
 
-        # 2. Split and task-specific baseline (MATLAB parts A, B, C)
-        # Part A: [0, 2s], B: [2, 4s], C: [4, 5s] relative to trial onset
+        # Split into Parts A, B, C and baseline correct
+        # MATLAB: Part A [-0.2, 2], B [1.8, 4], C [3.8, 5]
+        # We crop and then shift time so each starts at '0' for the binning phase
         ep_a = epochs.copy().crop(tmin=-0.2, tmax=2.0).apply_baseline((-0.2, 0))
         ep_b = epochs.copy().crop(tmin=1.8, tmax=4.0).apply_baseline((1.8, 2.0))
         ep_c = epochs.copy().crop(tmin=3.8, tmax=5.0).apply_baseline((3.8, 4.0))
 
-        # Recombine data [Trials x Channels x Times]
-        # We manually concatenate the data arrays to create one task-continuous epoch
-        data_comb = np.concatenate([ep_a.get_data(), ep_b.get_data(), ep_c.get_data()], axis=2)
-        info = ep_a.info
-        epochs_comb = mne.EpochsArray(data_comb, info, tmin=0)
+        # Reconstruct the discontinuous time vector
+        # This ensures Part B starts at 1.8 in your results, not 2.2
+        orig_times = np.concatenate([ep_a.times, ep_b.times, ep_c.times])
 
-        # 3. Binning: Resample to 4Hz (Each sample = mean of 250ms)
-        epochs_comb.resample(SFREQ_BINNED)
+        # Recombine data arrays: [Trials, Chans, Times]
+        combined_data = np.concatenate([ep_a.get_data(), ep_b.get_data(), ep_c.get_data()], axis=2)
 
-        # 4. Remove block starts (indices 0, 40, 80...)
-        rem_idx = np.arange(0, 480, 40)
-        epochs_comb.drop(rem_idx)
-        behav_clean = np.delete(behav, rem_idx, axis=0)
+        # # Resampling to 4Hz (creating 250ms bins)
+        # info = ep_a.info
+        # combined_epochs = mne.EpochsArray(combined_data, info)
+        # combined_epochs.resample(4.0)  # Downsample to 4Hz
+
+        # Create Dummy Epochs for resampling
+        temp_epochs = mne.EpochsArray(combined_data, ep_a.info, tmin=0)
+        # Resample data and the time vector simultaneously
+        resampled_data = temp_epochs.copy().resample(4.0).get_data()
+
+        # To resample the time labels correctly, we pick indices
+        resample_factor = ep_a.info['sfreq'] / 4.0
+        time_idx = np.arange(0, len(orig_times), resample_factor).astype(int)
+        resampled_times = orig_times[time_idx]
+
+        # Filter trials
+        keep_mask = np.ones(len(resampled_data), dtype=bool)
+        keep_mask[[i for i in rem_idx if i < len(keep_mask)]] = False
+        X = resampled_data[keep_mask]
+        y_labels = behav_data[keep_mask]
 
         # --- Decoding Loop ---
-        target_names = ['self', 'other', 'selfp', 'otherp']
-        target_cols = [0, 1, 3, 4]
-        results = {'decoding_accuracy': {}, 'searchlight_acc': {}}
+        with h5py.File(save_path, 'w') as hf:
+            hf.attrs['pair'] = pair
+            hf.attrs['player'] = ppt
+            hf.create_dataset('times', data=resampled_times)
+            hf.create_dataset('ch_names', data=[n.encode('utf-8') for n in ep_a.ch_names])
 
-        # Define adjacency for Spatial Searchlight (based on channel positions)
-        adjacency, ch_names = mne.channels.find_ch_adjacency(epochs_comb.info, type='eeg')
+            target_names = ['self', 'other', 'selfp', 'otherp']
+            target_cols = [0, 1, 3, 4]
 
-        for name, col in zip(target_names, target_cols):
-            y = behav_clean[:, col]
-            valid = ~np.isnan(y) & (y > 0)
+            for name, col in zip(target_names, target_cols):
+                y = y_labels[:, col]
 
-            X_valid = epochs_comb.get_data()[valid]
-            y_valid = y[valid]
+                # Remove NaNs and no-responses (0)
+                valid = ~np.isnan(y) & (y > 0)
+                if not np.any(valid): continue
 
-            # Replicate CoSMo SNR averaging
-            X_avg, y_avg = cosmo_average_samples(X_valid, y_valid)
+                # Replicate CoSMo SNR averaging
+                X_v, y_v = X[valid], y[valid]
+                X_avg, y_avg = cosmo_style_average_samples(X_v, y_v)
 
-            # --- 1. Temporal Decoding (Sliding Estimator) ---
-            clf = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis())
-            time_gen = SlidingEstimator(clf, scoring='accuracy', n_jobs=-1)
-            scores = cross_val_multiscore(time_gen, X_avg, y_avg, cv=10)
-            results['decoding_accuracy'][name] = scores.mean(axis=0)
+                # Define Classifier
+                clf = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis())
+                # n_jobs=-1 will use all available CPU cores
+                time_gen = SlidingEstimator(clf, scoring='accuracy', n_jobs=-1)
 
-            # --- 2. Spatial Searchlight (Iterating through channel neighborhoods) ---
-            # To mimic 'cosmo_meeg_chan_neighborhood' with count=4:
-            spatial_scores = np.zeros((num_chan, X_avg.shape[2]))  # [Chans x TimeBins]
+                # Create a group for this target (like a MATLAB sub-struct)
+                grp = hf.create_group(name)
 
-            for i in range(num_chan):
-                # Find the 3 closest neighbors + the channel itself = cluster of 4
-                # (using indices from the adjacency matrix)
-                neighbors = adjacency[i].indices
-                X_spatial = X_avg[:, neighbors, :]
+                # --- Temporal Decoding ---
+                scores_temp = cross_val_multiscore(time_gen, X_avg, y_avg, cv=10, n_jobs=1)
+                grp.create_dataset('samples', data=scores_temp.mean(0))
 
-                # Run sliding estimator on this small spatial cluster
-                # We mean across the neighbors to create a "virtual channel" or
-                # let the LDA handle the 4-feature vector
-                scores_spat = cross_val_multiscore(time_gen, X_spatial, y_avg, cv=10)
-                spatial_scores[i, :] = scores_spat.mean(axis=0)
+                # --- Channel Searchlight ---
+                # Replicating cosmo_meeg_chan_neighborhood (count=4)
+                adjacency, ch_names = mne.channels.find_ch_adjacency(ep_a.info, type='eeg')
+                sl_scores = np.zeros((len(ch_names), X_avg.shape[2]))
 
-            results['searchlight_acc'][name] = spatial_scores
+                for i in range(len(ch_names)):
+                    # Get indices of the channel and its nearest neighbors
+                    neighbor_idx = adjacency[i].indices
+                    # Limit to neighbors (MATLAB count=4 usually includes self + 3 closest)
+                    X_sl = X_avg[:, neighbor_idx, :]
 
-        # Save Results
-        save_out = path_to_data / "derivatives" / f"pair-{pair:02d}_player-{ppt:01d}_decoding_results.mat"
-        savemat(save_out, results)
-        print(f"      Saved: {save_out.name}")
+                    # Run sliding estimator on the spatial subset
+                    s_scores = cross_val_multiscore(time_gen, X_sl, y_avg, cv=5, n_jobs=1)
+                    sl_scores[i, :] = s_scores.mean(0)
+
+                grp.create_dataset('searchlight', data=sl_scores)
+
+                # Store Attributes (The "sa" and "fa" from MATLAB)
+                # This helps you know exactly what the labels were for this specific result
+                grp.create_dataset('sa_targets', data=y_v)
+                grp.attrs['n_samples_averaged'] = 4
+
+        print(f"Finished Pair {pair} Player {ppt}")

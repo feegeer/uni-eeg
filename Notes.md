@@ -70,3 +70,36 @@ My own (Felipe) understanding of expected results:
 - If the accuracy for the player's decision in the current trial (metric 1) is higher than 33%, then the EEG data contains some information --> if it was around 33%, I think all the other metrics would become irrelevant (luck-based predictions)
 - If the accuracy for the opponent's decision in the current tiral (metric 2) is higher than 33%, then the player can successfully predict the opponent's decision --> opponent is not random AND the player is ALSO not random --> both players are playing suboptimal strategies;
 - if metrics 2, 3, 4 are all around 33% but metric 1 is above that, then the player is playing truly random;
+
+
+Decoding matlab code notes:
+"""
+note: index values are in matlab format
+Loop through each pair:
+    - load the behaviour of the pair --> events tsv file (with the responses)
+    - take player 1 reponse (columns 5), player 2 response (column 7), outcome (column 9)
+    - create new table for player 1 and another for player 2 such that each table has the following format:
+        [player's response | opponent's response | outcome | previous player's response | opponent's previous response]
+        note: make sure the player and opponent are relative to whom the table belongs to
+    Loop over the 2 players in the pair:
+        - load pre-processed (derivatives) EEG data for current player
+        - separate epoch into 3 parts: A = [-0.2 to 2.0], B = [1.8 to 4], and C = [3.8 to 5]
+        - shift time labes for part B and C to make 0 the start of the reponse (B) or start of the feedback (C)
+        - baseline-correction: use the [-0.2 0] as a baseline. Run the baseline corrections for the trial parts
+        - remove the first trial of each block (from events and eeg) --> no previous trial
+        - average the data into time bins, and re-combine into 1 dataset (rather than 3 parts)
+            time windows: A-[0:0.25:1.75;0.25:0.25:2], B-[0:0.25:1.75;0.25:0.25:2], C-[0:0.25:0.75;0.25:0.25:1] 
+        Loop over trials:
+            Loop over the time bins for this part
+                - get the data for time-points in this time bin and average
+            - add the data to the the big matrix (one that includes all the data)   
+        - convert the data from mne to whatever library has LDA  
+        - Loop over things we want to decode
+            1 = played self, 2 = played other, 3 = played self previous trial, 4 = played other previous trial
+            set decoding target to current i = 1, 2, 3, or 4
+            remove no-responses
+            setup decoding config params
+            and run decoding (channel searchlight)
+            save decoding accuracy
+        save decoding and searchlight results for this player 
+"""
