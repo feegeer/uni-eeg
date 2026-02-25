@@ -40,10 +40,10 @@ print(f"Found {len(h5_files)} files for model: {MODEL_TYPE}")
 
 targets = ['self', 'other', 'selfp', 'otherp']
 titles = {
-  'self': "Own response",
-  'other': "Opponent's response",
-  'selfp': "Own previous response",
-  'otherp': "Opponent's previous response"
+  'self': "(a) Own response",
+  'other': "(b) Opponent's response",
+  'selfp': "(c) Own previous response",
+  'otherp': "(d) Opponent's previous response"
 }
 
 all_scores = {t: [] for t in targets}
@@ -67,38 +67,59 @@ for file_path in h5_files:
                 all_scores[target].append(scores)
 
 # -------------------------------------------------
+# DETERMINE DYNAMIC Y-LIMITS
+# -------------------------------------------------
+# Convert all data to percentage and find global min/max
+all_data = []
+for target in targets:
+    if len(all_scores[target]) == 0:
+        continue
+    data = np.vstack(all_scores[target]) * 100
+    all_data.append(data)
+
+if all_data:
+    combined = np.vstack(all_data)
+    y_min, y_max = combined.min(), combined.max()
+    padding = (y_max - y_min) * 0.1  # 10% padding
+    y_min -= padding
+    y_max += padding
+else:
+    y_min, y_max = 25, 60  # fallback
+
+# -------------------------------------------------
 # PLOTTING
 # -------------------------------------------------
 sns.set_style("ticks")
-# Increase height to accommodate potential BF/Topomap rows
 fig, axes = plt.subplots(2, 2, figsize=(14, 12))
 axes = axes.flatten()
 
-for i, (ax, target) in enumerate(zip(axes, targets)):
+for ax, target in zip(axes, targets):
     if len(all_scores[target]) == 0:
         continue
 
-    data = np.vstack(all_scores[target]) * 100  # Convert to percentage
+    data = np.vstack(all_scores[target]) * 100
     mean = np.mean(data, axis=0)
-    std = np.std(data, axis=0)  # Reference looks like STD or large SEM
+    std = np.std(data, axis=0)
 
-    # Plot each phase separately to get the "breaks" in the line
     for phase_name, (t_start, t_end) in PHASES.items():
-        # Mask data for this phase
         mask = (times_reference >= t_start) & (times_reference <= t_end)
         t_phase = times_reference[mask]
         m_phase = mean[mask]
         s_phase = std[mask]
         color = PHASE_COLORS[phase_name]
 
-        # Background shading for the phase
+        # Background shading and label
         ax.axvspan(t_start, t_end, color='gray', alpha=0.05)
-        ax.text((t_start + t_end) / 2, 55, phase_name, ha='center', fontsize=20, fontweight='bold')
+        ax.text((t_start + t_end) / 2,
+                y_max - (y_max - y_min) * 0.05,
+                phase_name,
+                ha='center',
+                fontsize=14,
+                fontweight='bold',
+                alpha=1.0)
 
-        # Shaded Error Bar
+        # Shaded error and mean line
         ax.fill_between(t_phase, m_phase - s_phase, m_phase + s_phase, color=color, alpha=0.2)
-
-        # Line plot
         ax.plot(t_phase,
                 m_phase,
                 color=color,
@@ -108,19 +129,28 @@ for i, (ax, target) in enumerate(zip(axes, targets)):
                 markerfacecolor='none',
                 markeredgewidth=1)
 
-    # Styling the Axes
+    # Chance line
     ax.axhline(chance, linestyle="--", color="black", lw=1, zorder=1)
-    ax.set_title(titles[target], loc='left', fontweight='bold', fontsize=14)
+
+    # Axes styling
+    ax.set_title(titles[target], loc='left', fontweight='bold', fontsize=18)
     ax.set_ylabel("Decoding accuracy (%)")
     ax.set_xlabel("Time (s)")
-
-    # Matching the reference limits
     ax.set_xlim(-0.2, 5.2)
-    ax.set_ylim(25, 60)
+    ax.set_ylim(y_min, y_max)
     ax.set_xticks([0, 1, 2, 3, 4, 5])
 
-    # Clean up spines
     sns.despine(ax=ax, offset=10)
 
 plt.tight_layout()
+
+# -------------------------------------------------
+# SAVE AND SHOW FIGURE
+# -------------------------------------------------
+output_dir = os.path.join(results_dir, "figures")
+os.makedirs(output_dir, exist_ok=True)
+save_path = os.path.join(output_dir, f"temporal_decoding_{MODEL_TYPE}.png")
+fig.savefig(save_path, dpi=300, bbox_inches='tight')
+print(f"Figure saved as: {save_path}")
+
 plt.show()
