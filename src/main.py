@@ -5,7 +5,7 @@ import visualization
 
 
 def main():
-    bids_dataset = dataset.BidsDataset.get_from(pathlib.Path("ds006761"))
+    bids_dataset = dataset.BidsDataset.get_from(pathlib.Path("src\\ds006761"))
     bids_dataset.preprocess()
     bids_dataset.inspect_derivatives()
 

@@ -236,18 +236,23 @@ class Subject:
         self._interpolate(raw_p2, self.player2, "Player 2")
 
         # 5. Downsample (MATLAB's ft_resampledata)
-        raw_p1.resample(256, verbose=False)
-        raw_p2.resample(256, verbose=False)
+        # > the original code uses 256Hz --> however, the matlab function rounds the frequency to match
+        #   the epoch time boundaries (-0.2 and 5.0) --> mne doesn't do that, so we manually round
+        #   ourselves to the closest, standard, and divisible by the boundaries frequency.
+        raw_p1.resample(250, verbose=False)
+        raw_p2.resample(250, verbose=False)
 
         # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
         epochs_p1 = self._create_epochs(raw_p1)
         epochs_p2 = self._create_epochs(raw_p2)
 
+        del raw_p1, raw_p2
+        gc.collect()
+
         # 7. Save (MATLAB's save function)
         self._save(epochs_p1, epochs_p2, output_dir)
 
-        # 8. Force Garbage Collection
-        del raw_p1, raw_p2, epochs_p1, epochs_p2
+        del epochs_p1, epochs_p2
         gc.collect()
         print(f"  Done {self.id}. Memory cleared.\n")
 
@@ -314,7 +319,7 @@ class Subject:
         # Create event array from annotations
         events, _ = mne.events_from_annotations(raw, verbose=False)
         # Epoching (-0.2s pre-stimulus, 5.0s post-stimulus)
-        return mne.Epochs(raw, events, tmin=-0.2, tmax=5.0, baseline=(-0.2, 0), preload=True, verbose=False)
+        return mne.Epochs(raw, events, tmin=-0.2, tmax=5.0, baseline=(-0.2, 0), preload=False, verbose=False)
 
     def _save(self, ep1, ep2, output_dir):
         """Saves the final Epochs objects to disk (MATLAB's save function)."""
@@ -350,6 +355,7 @@ class BidsDataset:
         output_path = self.bids_root
         print(f"Starting preprocessing for {len(self.subjects)} subjects.")
         print(f"Outputting processed data to: {output_path / 'derivatives'}")
+
         for subject in self.subjects:
             subject.preprocess(self.bids_root, output_path)
         # self.average_results()

@@ -3,14 +3,54 @@ import numpy as np
 import pandas as pd
 import mne
 import h5py
+import gc
+
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.model_selection import StratifiedKFold
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 from mne.decoding import SlidingEstimator, cross_val_multiscore
 
+# =====================================================
+# MODEL SELECTION SETTINGS
+# =====================================================
 
-# --- Helper Functions ---
+MODEL_TYPE = "lda"  # Options: "lda", "logreg", "svm"
+
+# Logistic Regression hyperparameters
+LOGREG_C = 1.0
+LOGREG_MAX_ITER = 1000
+
+# LDA hyperparameters
+LDA_SOLVER = "svd"  # "svd", "lsqr", "eigen"
+LDA_SHRINKAGE = None  # None or "auto"
+
+# SVM hyperparameters
+SVM_C = 1.0  # Regularization strength
+SVM_MAX_ITER = 1000  # Set -1 for no limit
+
+# =====================================================
+# CLASSIFIER FACTORY
+# =====================================================
+
+
+def get_classifier():
+    if MODEL_TYPE.lower() == "lda":
+        clf = LinearDiscriminantAnalysis(solver=LDA_SOLVER, shrinkage=LDA_SHRINKAGE)
+    elif MODEL_TYPE.lower() == "logreg":
+        clf = LogisticRegression(penalty="l2", C=LOGREG_C, solver="liblinear", max_iter=LOGREG_MAX_ITER)
+    elif MODEL_TYPE.lower() == "svm":
+        clf = SVC(kernel="linear", C=SVM_C, max_iter=SVM_MAX_ITER)
+    else:
+        raise ValueError("MODEL_TYPE must be 'lda', 'logreg', or 'svm'")
+
+    return make_pipeline(StandardScaler(), clf)
+
+
+# =====================================================
+# HELPER FUNCTIONS
+# =====================================================
 def cosmo_style_average_samples(X, y, count=4, repeats=20, seed=1):
     """
     Replicates cosmo_average_samples: 
@@ -63,12 +103,15 @@ def process_behavior(path_to_data, pair):
     return p1_behav, p2_behav
 
 
-# --- Main Script ---
-path_to_data = "ds006761"
+# =====================================================
+# MAIN SCRIPT
+# =====================================================
+path_to_data = os.path.join("src", "ds006761")
 results_dir = os.path.join(path_to_data, "derivatives", "decoding_results")
 os.makedirs(results_dir, exist_ok=True)
 
-pair_ids = [i for i in range(1, 35) if i not in [10, 23, 24]]
+# pair_ids = [i for i in range(1, 35) if i not in [10, 23, 24]]
+pair_ids = [1]
 rem_idx = np.arange(0, 480, 40)  # Trials to remove (block starts)
 
 for pair in pair_ids:
@@ -78,13 +121,12 @@ for pair in pair_ids:
     for ppt_idx, behav_data in enumerate(p_behavs):
         ppt = ppt_idx + 1
 
-        save_path = os.path.join(results_dir, f"sub-{pair:02d}_player-{ppt}_decoding.h5")
+        save_path = os.path.join(results_dir, f"{MODEL_TYPE}-sub-{pair:02d}_player-{ppt}_decoding.h5")
         if os.path.exists(save_path): continue
 
         # Load preprocessed EEG
-        fname = f"pair-{pair:02d}_player-{ppt}_task-RPS_eeg.fif"
+        fname = f"pair-{pair:02d}_player-{ppt}_task-RPS_eeg_epo.fif"
         fpath = os.path.join(path_to_data, "derivatives", fname)
-
         if not os.path.exists(fpath): continue
 
         epochs = mne.read_epochs(fpath, preload=True)
@@ -129,6 +171,8 @@ for pair in pair_ids:
         with h5py.File(save_path, 'w') as hf:
             hf.attrs['pair'] = pair
             hf.attrs['player'] = ppt
+            hf.attrs["model_type"] = MODEL_TYPE
+
             hf.create_dataset('times', data=resampled_times)
             hf.create_dataset('ch_names', data=[n.encode('utf-8') for n in ep_a.ch_names])
 
@@ -147,9 +191,9 @@ for pair in pair_ids:
                 X_avg, y_avg = cosmo_style_average_samples(X_v, y_v)
 
                 # Define Classifier
-                clf = make_pipeline(StandardScaler(), LinearDiscriminantAnalysis())
+                clf = get_classifier()
                 # n_jobs=-1 will use all available CPU cores
-                time_gen = SlidingEstimator(clf, scoring='accuracy', n_jobs=-1)
+                time_gen = SlidingEstimator(clf, scoring='accuracy', n_jobs=1, verbose=False)
 
                 # Create a group for this target (like a MATLAB sub-struct)
                 grp = hf.create_group(name)
@@ -160,18 +204,21 @@ for pair in pair_ids:
 
                 # --- Channel Searchlight ---
                 # Replicating cosmo_meeg_chan_neighborhood (count=4)
-                adjacency, ch_names = mne.channels.find_ch_adjacency(ep_a.info, type='eeg')
+                adjacency, ch_names = mne.channels.find_ch_adjacency(ep_a.info, ch_type='eeg')
                 sl_scores = np.zeros((len(ch_names), X_avg.shape[2]))
 
                 for i in range(len(ch_names)):
                     # Get indices of the channel and its nearest neighbors
-                    neighbor_idx = adjacency[i].indices
+                    neighbor_idx = adjacency[i].tocsr().indices
                     # Limit to neighbors (MATLAB count=4 usually includes self + 3 closest)
-                    X_sl = X_avg[:, neighbor_idx, :]
+                    X_sl = np.take(X_avg, neighbor_idx, axis=1)
 
                     # Run sliding estimator on the spatial subset
                     s_scores = cross_val_multiscore(time_gen, X_sl, y_avg, cv=5, n_jobs=1)
                     sl_scores[i, :] = s_scores.mean(0)
+
+                    del X_sl
+                    gc.collect()
 
                 grp.create_dataset('searchlight', data=sl_scores)
 
@@ -179,5 +226,8 @@ for pair in pair_ids:
                 # This helps you know exactly what the labels were for this specific result
                 grp.create_dataset('sa_targets', data=y_v)
                 grp.attrs['n_samples_averaged'] = 4
+
+                del X_v, y_v, X_avg, y_avg
+                gc.collect()
 
         print(f"Finished Pair {pair} Player {ppt}")
