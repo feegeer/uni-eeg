@@ -382,7 +382,7 @@ class BidsDataset:
 
         try:
             # 1. Load the epochs file
-            epochs_p1 = mne.read_epochs(p1_fname, preload=True, verbose=False)
+            epochs_p1 = mne.read_epochs(p1_fname, preload=False, verbose=False)
 
             # 2. Compute the Evoked Response
             evoked_p1 = epochs_p1.average()

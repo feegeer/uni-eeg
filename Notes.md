@@ -1,5 +1,8 @@
 # Notes
 
+sub-16 has 128 channels instead of 64 for some reason -- they probably used different equipment
+
+
 **---Scheduled Meeting on 09/03---**
 
 ## Plan (To-Do):
