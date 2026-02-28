@@ -264,41 +264,45 @@ class Subject:
 
         p1_idx = mne.pick_channels(raw.ch_names, p1_chans)
         p2_idx = mne.pick_channels(raw.ch_names, p2_chans)
+
         info_p1 = mne.pick_info(raw.info, p1_idx)
         info_p2 = mne.pick_info(raw.info, p2_idx)
+        
         raw_p1 = mne.io.RawArray(raw.get_data(picks=p1_idx), info_p1, verbose=False)
         raw_p2 = mne.io.RawArray(raw.get_data(picks=p2_idx), info_p2, verbose=False)
 
         # Helper function to rename, apply map, and set montage (The critical function)
-        def fix_names(inst, prefix):
-            # 1. Strip player prefix ('2-A1' -> 'A1')
+        def fix_names(inst, prefix, label):
+            # --- 0. Compute valid channels after stripping prefix ---
+            stripped_chs = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
+            valid_chs = [ch for ch in stripped_chs.values() if ch in BIOSEMI_CODE_TO_1020_LABEL]
+            
+            # --- 1. Pick only the valid channels to avoid duplicates ---
+            pick_idx = [inst.ch_names.index(ch_name) for ch_name, new_name in stripped_chs.items() if new_name in valid_chs]
+            inst.pick(pick_idx, verbose=False)
+            
+            # --- 2. Rename by stripping prefix ---
             rename_map_prefix = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
             inst.rename_channels(rename_map_prefix)
-
-            # 2. Rename using the dynamically generated map (from .lay equivalent)
+            
+            # --- 3. Apply BioSemi → 10-20 mapping ---
             final_map = {k: v for k, v in BIOSEMI_CODE_TO_1020_LABEL.items() if k in inst.ch_names}
-            if final_map:
-                inst.rename_channels(final_map)
-                # COMPARISON (MATLAB): Equivalent to 'data_epoch.label(1:64) = layout.label(1:64);'
-
-            # 3. Set channel types and pick only the final EEG channels
+            inst.rename_channels(final_map)
+            
+            # --- 4. Set all channels to EEG type ---
             inst.set_channel_types({ch: 'eeg' for ch in inst.ch_names}, verbose=False)
-            eeg_chans = [ch for ch in inst.ch_names if ch in FULL_MNE_BISEOMI_MONTAGE.ch_names]
-            inst.pick_channels(eeg_chans, ordered=True, verbose=False)
-
-            # Use the canonical list of channels from the 10-20 system (64 channels)
-            montage_1020 = mne.channels.make_standard_montage("standard_1020")
-
-            # Drop any non-EEG/unmapped channels (e.g., EOGs, references)
-            eeg_chans = [ch for ch in inst.ch_names if ch in montage_1020.ch_names]
-            inst.pick_channels(eeg_chans, ordered=True, verbose=False)
-
-            # 4. Apply Montage (sets the 3D coordinates from the .mat file)
+            
+            # --- 5. Keep only canonical BioSemi 64 channels ---
+            canonical_chs = FULL_MNE_BISEOMI_MONTAGE.ch_names
+            inst.pick_channels([ch for ch in canonical_chs if ch in inst.ch_names], ordered=True, verbose=False)
+            
+            # --- 6. Apply the 3D montage ---
             inst.set_montage(FULL_MNE_BISEOMI_MONTAGE, match_case=False, verbose=False)
-            # COMPARISON (MATLAB): This links the new 10-20 channel names to the 3D coordinates from 'biosemi64.mat'.
+            
+            print(f"  {label}: Channels fixed. Total channels now: {len(inst.ch_names)}")
 
-        fix_names(raw_p1, "2-")
-        fix_names(raw_p2, "1-")
+        fix_names(raw_p1, "2-", "Player 1")
+        fix_names(raw_p2, "1-", "Player 2")
         return raw_p1, raw_p2
 
     def _interpolate(self, raw, player_meta, label):
@@ -357,7 +361,8 @@ class BidsDataset:
         print(f"Outputting processed data to: {output_path / 'derivatives'}")
 
         for subject in self.subjects:
-            subject.preprocess(self.bids_root, output_path)
+            if subject.id == "sub-01":
+                subject.preprocess(self.bids_root, output_path)
         # self.average_results()
 
     def inspect_derivatives(self) -> None:

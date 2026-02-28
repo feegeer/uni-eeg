@@ -166,4 +166,4 @@ def run_markov_analysis(data_path: Path):
 
 
 if __name__ == "__main__":
-    run_markov_analysis(Path("../data"))
+    run_markov_analysis(Path("src/ds006761"))

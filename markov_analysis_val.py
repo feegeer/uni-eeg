@@ -2,63 +2,94 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
-from scipy.stats import ttest_1samp
 
 from markov_analysis_map import compute_markov_predictability
 
 
+# =====================================================
+# DATA PATH
+# =====================================================
 
-def validate_single_subject(tsv_path: Path, player: int = 1):
+DATA_PATH = Path(r"C:\\Users\\poten\\uni-eeg\\src\\ds006761")
 
+window_sizes = range(5, 101)
+all_participants = []
 
-    print(f"\nLoading file: {tsv_path.name}")
+# =====================================================
+# LOAD ALL SUBJECTS (POOL PLAYER 1 + 2)
+# =====================================================
 
-    # Load TSV
-    events = pd.read_csv(tsv_path, sep="\t")
+for sub_folder in DATA_PATH.glob("sub-*"):
 
-    # Select player
-    if player == 1:
-        responses = events["player1_resp"].to_numpy()
-    else:
-        responses = events["player2_resp"].to_numpy()
+    tsv_files = list(sub_folder.glob("eeg/*events*.tsv"))
+    if len(tsv_files) == 0:
+        continue
 
-    print("Number of trials:", len(responses))
-    print("Unique responses:", np.unique(responses))
+    events = pd.read_csv(tsv_files[0], sep="\t")
 
-    # Run Markov analysis
-    mean_acc, predictions = compute_markov_predictability(responses)
+    # Player 1
+    resp1 = events["player1_resp"].to_numpy()
+    mean_acc1, _ = compute_markov_predictability(resp1)
+    all_participants.append(mean_acc1)
 
-    print("\nAccuracy per window (5–100):")
-    print(mean_acc)
+    # Player 2
+    resp2 = events["player2_resp"].to_numpy()
+    mean_acc2, _ = compute_markov_predictability(resp2)
+    all_participants.append(mean_acc2)
 
-    avg_acc = np.mean(mean_acc)
-    print("\nAverage predictability:", round(avg_acc, 4))
+all_participants = np.array(all_participants)
 
-    # Statistical test vs chance for the move(33.3%)
-    chance = 1 / 3
-    t_stat, p_val = ttest_1samp(mean_acc, chance)
+# =====================================================
+# GROUP STATISTICS
+# =====================================================
 
-    print("\nTest vs chance (33.3%)")
-    print("t =", round(t_stat, 4))
-    print("p =", round(p_val, 6))
+group_mean = np.mean(all_participants, axis=0)
+group_sem = np.std(all_participants, axis=0) / np.sqrt(len(all_participants))
 
-    # Plot the res 
-    window_sizes = range(5, 101)
+chance = 1 / 3
 
-    plt.figure(figsize=(8, 5))
-    plt.plot(window_sizes, mean_acc, linewidth=2)
-    plt.axhline(chance, linestyle="--")
-    plt.xlabel("Window Size")
-    plt.ylabel("Prediction Accuracy")
-    plt.title(f"Markov Predictability ({tsv_path.name}, Player {player})")
-    plt.tight_layout()
-    plt.show()
+print("Total players:", len(all_participants))
+print("Grand mean predictability:", np.mean(group_mean))
 
 
+# =====================================================
+# PLOT (Paper Style)
+# =====================================================
 
-if __name__ == "__main__":
+plt.figure(figsize=(8, 5))
 
-    # Adjust if needed but i fistly test with one file
-    tsv_file = Path("sub-01_task-RPS_events.tsv")
+# --- Individual participants (grey, transparent) ---
+for subj in all_participants:
+    plt.plot(
+        window_sizes,
+        subj,
+        color="grey",
+        alpha=0.2,
+        linewidth=1
+    )
 
-    validate_single_subject(tsv_file, player=1)
+# --- Group mean (blue, bold) ---
+plt.plot(
+    window_sizes,
+    group_mean,
+    color="blue",
+    linewidth=3
+)
+
+# --- SEM shading (light blue) ---
+plt.fill_between(
+    window_sizes,
+    group_mean - group_sem,
+    group_mean + group_sem,
+    color="blue",
+    alpha=0.15
+)
+
+# --- Chance line ---
+plt.axhline(chance, linestyle="--", color="black", linewidth=1)
+
+plt.xlabel("Window Size")
+plt.ylabel("Prediction Accuracy")
+plt.title("Group Markov Predictability")
+plt.tight_layout()
+plt.show()

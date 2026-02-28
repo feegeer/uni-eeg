@@ -7,7 +7,8 @@ import visualization
 def main():
     bids_dataset = dataset.BidsDataset.get_from(pathlib.Path("src\\ds006761"))
     bids_dataset.preprocess()
-    bids_dataset.inspect_derivatives()
+    # bids_dataset.inspect_derivatives()
+    return
 
     # Figure 1c
     data = [[], [], []]
@@ -17,8 +18,8 @@ def main():
         data[1].append(percent_lost)
         data[2].append(percent_drawn)
 
-    labels = ["Winner wins", "Winner looses", "Draw"]
-    colors = ["#2d708e", "#404788", "#481567"]
+    labels = [" wins", "Winner looses", "Draw"]
+    colors = ["#Winner2d708e", "#404788", "#481567"]
     yticks = list(range(20, 50, 5))
     visualization.draw_raincloud_plot(data, labels, "Game outcome", colors, yticks, 100 / 3)
 
