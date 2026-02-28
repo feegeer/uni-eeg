@@ -18,13 +18,13 @@ from mne.decoding import SlidingEstimator, cross_val_multiscore
 
 MODEL_TYPE = "lda"  # Options: "lda", "logreg", "svm"
 
-# Logistic Regression hyperparameters
-LOGREG_C = 1.0
-LOGREG_MAX_ITER = 1000
-
 # LDA hyperparameters
 LDA_SOLVER = "svd"  # "svd", "lsqr", "eigen"
 LDA_SHRINKAGE = None  # None or "auto"
+
+# Logistic Regression hyperparameters
+LOGREG_C = 1.0
+LOGREG_MAX_ITER = 1000
 
 # SVM hyperparameters
 SVM_C = 1.0  # Regularization strength
@@ -62,8 +62,8 @@ def cosmo_style_average_samples(X, y, count=4, repeats=20, seed=1):
 
     for c in classes:
         idx = np.where(y == c)[0]
-        if len(idx) < count: continue
-
+        if len(idx) < count:
+            continue
         for _ in range(repeats):
             chosen_idx = rng.choice(idx, size=count, replace=True)
             X_avg.append(np.mean(X[chosen_idx], axis=0))
@@ -110,8 +110,10 @@ path_to_data = os.path.join("src", "ds006761")
 results_dir = os.path.join(path_to_data, "derivatives", "decoding_results")
 os.makedirs(results_dir, exist_ok=True)
 
-# pair_ids = [i for i in range(1, 35) if i not in [10, 23, 24]]
-pair_ids = [1]
+pairs_not_included_original = [10, 23, 24]
+pairs_not_included_ours = [16, 29]  # due to errors and data inconsistencies not mentioned in the paper
+pairs_removed = pairs_not_included_original + pairs_not_included_ours
+pair_ids = [i for i in range(1, 35) if i not in pairs_removed]
 rem_idx = np.arange(0, 480, 40)  # Trials to remove (block starts)
 
 for pair in pair_ids:
@@ -122,15 +124,17 @@ for pair in pair_ids:
         ppt = ppt_idx + 1
 
         save_path = os.path.join(results_dir, f"{MODEL_TYPE}-sub-{pair:02d}_player-{ppt}_decoding.h5")
-        if os.path.exists(save_path): continue
+        if os.path.exists(save_path):
+            continue
 
         # Load preprocessed EEG
         fname = f"pair-{pair:02d}_player-{ppt}_task-RPS_eeg_epo.fif"
         fpath = os.path.join(path_to_data, "derivatives", fname)
-        if not os.path.exists(fpath): continue
+        if not os.path.exists(fpath):
+            continue
 
-        epochs = mne.read_epochs(fpath, preload=True)
-        epochs.set_eeg_reference("average")
+        epochs = mne.read_epochs(fpath, preload=False)
+        # epochs.set_eeg_reference("average")
 
         # Split into Parts A, B, C and baseline correct
         # MATLAB: Part A [-0.2, 2], B [1.8, 4], C [3.8, 5]
@@ -167,6 +171,12 @@ for pair in pair_ids:
         X = resampled_data[keep_mask]
         y_labels = behav_data[keep_mask]
 
+        # Precompute adjacency (Delaunay)
+        adjacency, ch_names = mne.channels.find_ch_adjacency(ep_a.info, ch_type='eeg')
+        neighbors = []
+        for i in range(len(ch_names)):
+            neighbors.append(adjacency[i].tocsr().indices)
+
         # --- Decoding Loop ---
         with h5py.File(save_path, 'w') as hf:
             hf.attrs['pair'] = pair
@@ -184,7 +194,8 @@ for pair in pair_ids:
 
                 # Remove NaNs and no-responses (0)
                 valid = ~np.isnan(y) & (y > 0)
-                if not np.any(valid): continue
+                if not np.any(valid):
+                    continue
 
                 # Replicate CoSMo SNR averaging
                 X_v, y_v = X[valid], y[valid]
@@ -203,13 +214,11 @@ for pair in pair_ids:
                 grp.create_dataset('samples', data=scores_temp.mean(0))
 
                 # --- Channel Searchlight ---
-                # Replicating cosmo_meeg_chan_neighborhood (count=4)
-                adjacency, ch_names = mne.channels.find_ch_adjacency(ep_a.info, ch_type='eeg')
                 sl_scores = np.zeros((len(ch_names), X_avg.shape[2]))
 
                 for i in range(len(ch_names)):
                     # Get indices of the channel and its nearest neighbors
-                    neighbor_idx = adjacency[i].tocsr().indices
+                    neighbor_idx = neighbors[i]
                     # Limit to neighbors (MATLAB count=4 usually includes self + 3 closest)
                     X_sl = np.take(X_avg, neighbor_idx, axis=1)
 
