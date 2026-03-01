@@ -204,7 +204,7 @@ def run_pipeline(path_to_data, results_dir):
 
             epo_path = os.path.join(
                 path_to_data,
-                "derivatives",
+                "new_derivatives",
                 f"pair-{pair:02d}_player-{ppt}_task-RPS_eeg_epo.fif"
             )
 
@@ -259,6 +259,6 @@ def run_pipeline(path_to_data, results_dir):
 if __name__ == "__main__":
 
     PATH_TO_DATA = "src/ds006761"
-    RESULTS_DIR = os.path.join(PATH_TO_DATA, "derivatives", "python_replication_corrected")
+    RESULTS_DIR = os.path.join(PATH_TO_DATA, "new_derivatives", "python_replication_corrected")
 
     run_pipeline(PATH_TO_DATA, RESULTS_DIR)

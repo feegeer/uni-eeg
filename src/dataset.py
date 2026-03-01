@@ -24,31 +24,24 @@ BIOSEMI_ORDERED_CODES = [
 # Get the standard 10-20 names from MNE's built-in montage (64 channels)
 montage_1020_ref = mne.channels.make_standard_montage('standard_1020')
 TEN_TWENTY_ORDERED_LABELS = montage_1020_ref.ch_names[:64]
-
-# CRITICAL MAPPING: BioSemi Code -> 10-20 Label.
-# COMPARISON (MATLAB): This is equivalent to loading the labels from 'biosemi64.lay'.
 BIOSEMI_CODE_TO_1020_LABEL = dict(zip(BIOSEMI_ORDERED_CODES, TEN_TWENTY_ORDERED_LABELS))
 
 # 1. Load the 3D Coordinates from the .mat file
-# CRITICAL: Replace 'path/to/biosemi64.mat' with the actual path to your file.
-# COMPARISON (MATLAB): Equivalent to 'load('biosemi64.mat');'
 try:
     mat_contents = scipy.io.loadmat("src/biosemi64.mat")
-    # Assuming the coordinate array is stored under the key 'biosemi64' inside the .mat file.
-    biosemi_coords_3d = mat_contents['biosemi64']
+    # Biosemi64.mat coordinates are in a unit circle.abs
+    # The average adult's head radius is around 9cm.
+    biosemi_coords_3d = mat_contents['biosemi64'] * 0.09
 except FileNotFoundError:
     print("FATAL ERROR: biosemi64.mat not found. Please update the file path in the script.")
     raise
 
 # 2. Create a custom MNE montage from the .mat data.
-# Note: Assuming the data is in centimeters (cm) and converting to meters (m) as MNE expects meters.
-# If your data is already in meters, remove the division by 100.
-ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d / 14))
+ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d))
 FULL_MNE_BISEOMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
-# COMPARISON (MATLAB): This MNE object now holds the 3D positions needed for ft_channelrepair.
+
 
 # --- Data Structures (Enums and Dataclasses) ---
-
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -323,12 +316,12 @@ class Subject:
         # Create event array from annotations
         events, _ = mne.events_from_annotations(raw, verbose=False)
         # Epoching (-0.2s pre-stimulus, 5.0s post-stimulus)
-        return mne.Epochs(raw, events, tmin=-0.2, tmax=5.0, baseline=(-0.2, 0), preload=False, verbose=False)
+        return mne.Epochs(raw, events, tmin=-0.2, tmax=5.0, baseline=None, preload=False, verbose=False)
 
     def _save(self, ep1, ep2, output_dir):
         """Saves the final Epochs objects to disk (MATLAB's save function)."""
         pair_num = self.id.replace('sub-', '')
-        out_folder = output_dir / "derivatives"
+        out_folder = output_dir / "new_derivatives"
         out_folder.mkdir(parents=True, exist_ok=True)
 
         p1_fname = out_folder / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
@@ -358,10 +351,11 @@ class BidsDataset:
     def preprocess(self) -> None:
         output_path = self.bids_root
         print(f"Starting preprocessing for {len(self.subjects)} subjects.")
-        print(f"Outputting processed data to: {output_path / 'derivatives'}")
+        print(f"Outputting processed data to: {output_path / 'new_derivatives'}")
 
+        sub_completed = []
         for subject in self.subjects:
-            if subject.id == "sub-01":
+            if subject.id not in sub_completed:
                 subject.preprocess(self.bids_root, output_path)
         # self.average_results()
 
@@ -376,7 +370,7 @@ class BidsDataset:
 
         first_subject_id = self.subjects[0].id
         pair_num = first_subject_id.replace('sub-', '')
-        output_path = self.bids_root / "derivatives"
+        output_path = self.bids_root / "new_derivatives"
         p1_fname = output_path / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
 
         print(f"\n--- Inspecting first derivative file: {p1_fname.name} ---")
