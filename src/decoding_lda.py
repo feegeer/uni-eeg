@@ -13,42 +13,55 @@ from sklearn.metrics import accuracy_score
 # CONFIGURATION
 # ==========================================================
 
-LAMBDA = 0.01
 N_SPLITS = 10
 PSEUDO_COUNT = 4
 PSEUDO_REPEATS = 20
-RANDOM_SEED = 1
+RANDOM_STATE = 1
 
-rng = np.random.default_rng(RANDOM_SEED)
+rng = np.random.default_rng(RANDOM_STATE)
 
 # ==========================================================
 # CLASSIFIER
 # ==========================================================
 
 def get_classifier():
-    return LinearDiscriminantAnalysis(
-        solver="lsqr",
-        shrinkage=LAMBDA
-    )
+    return LinearDiscriminantAnalysis()
 
 # ==========================================================
-# FEATURE EXTRACTION
+# PSEUDOTRIALS (COSMO-STYLE, BALANCED)
+# ==========================================================
+
+def make_pseudotrials(X, y):
+    X_out, y_out = [], []
+    classes = np.unique(y)
+
+    for _ in range(PSEUDO_REPEATS):
+        for c in classes:
+            idx = np.where(y == c)[0]
+
+            if len(idx) < PSEUDO_COUNT:
+                continue
+
+            idx = rng.permutation(idx)
+            n_groups = len(idx) // PSEUDO_COUNT
+
+            for g in range(n_groups):
+                sel = idx[g * PSEUDO_COUNT:(g + 1) * PSEUDO_COUNT]
+                X_out.append(X[sel].mean(axis=0))
+                y_out.append(c)
+
+    return np.array(X_out), np.array(y_out)
+
+# ==========================================================
+# STRICT MATLAB PHASE SPLIT + BINNING
 # ==========================================================
 
 def split_and_bin_epochs(epochs):
-    """
-    Correct temporal alignment and binning:
-    - Decision: 0–2 s
-    - Response: 2–4 s
-    - Feedback: 4–5 s
-    """
 
-    # Phase splits
     partA = epochs.copy().crop(tmin=-0.2, tmax=2.0)
     partB = epochs.copy().crop(tmin=1.8, tmax=4.0)
     partC = epochs.copy().crop(tmin=3.8, tmax=5.0)
 
-    # Phase-specific baselines
     partA.apply_baseline((-0.2, 0.0), verbose=False)
     partB.apply_baseline((1.8, 2.0), verbose=False)
     partC.apply_baseline((3.8, 4.0), verbose=False)
@@ -57,48 +70,25 @@ def split_and_bin_epochs(epochs):
     B_data, B_times = partB.get_data(), partB.times
     C_data, C_times = partC.get_data(), partC.times
 
-    # Define global bin edges (absolute task time)
     bin_edges = np.arange(0, 5.0001, 0.25)
-
     all_bins = []
 
     for i in range(len(bin_edges) - 1):
         t0, t1 = bin_edges[i], bin_edges[i + 1]
 
         if t0 < 2:
-            mask = (A_times >= t0) & (A_times < t1)
+            mask = (A_times > t0) & (A_times < t1)   # strict MATLAB
             all_bins.append(A_data[:, :, mask].mean(axis=2))
 
         elif t0 < 4:
-            mask = (B_times >= t0) & (B_times < t1)
+            mask = (B_times > t0) & (B_times < t1)
             all_bins.append(B_data[:, :, mask].mean(axis=2))
 
         else:
-            mask = (C_times >= t0) & (C_times < t1)
+            mask = (C_times > t0) & (C_times < t1)
             all_bins.append(C_data[:, :, mask].mean(axis=2))
 
     return np.stack(all_bins, axis=2)
-
-# ==========================================================
-# PSEUDOTRIALS (NO REPLACEMENT)
-# ==========================================================
-
-def make_pseudotrials(X, y):
-    X_out, y_out = [], []
-    classes = np.unique(y)
-
-    for c in classes:
-        idx = np.where(y == c)[0]
-
-        if len(idx) < PSEUDO_COUNT:
-            continue
-
-        for _ in range(PSEUDO_REPEATS):
-            chosen = rng.choice(idx, size=PSEUDO_COUNT, replace=False)
-            X_out.append(X[chosen].mean(axis=0))
-            y_out.append(c)
-
-    return np.array(X_out), np.array(y_out)
 
 # ==========================================================
 # TEMPORAL DECODING
@@ -118,9 +108,8 @@ def temporal_decoding(X, y):
         X_train, y_train = make_pseudotrials(X_train_raw, y_train_raw)
         X_test, y_test = make_pseudotrials(X_test_raw, y_test_raw)
 
-        clf = get_classifier()
-
         for t in range(n_times):
+            clf = get_classifier()
             clf.fit(X_train[:, :, t], y_train)
             preds = clf.predict(X_test[:, :, t])
             acc[t] += accuracy_score(y_test, preds)
@@ -128,7 +117,7 @@ def temporal_decoding(X, y):
     return acc / N_SPLITS
 
 # ==========================================================
-# SEARCHLIGHT DECODING
+# SEARCHLIGHT DECODING (FIXED NEIGHBORS)
 # ==========================================================
 
 def searchlight_decoding(X, y, ch_coords):
@@ -138,7 +127,12 @@ def searchlight_decoding(X, y, ch_coords):
     n_ch = X.shape[1]
 
     dists = cdist(ch_coords, ch_coords)
-    neighbors = [np.argsort(dists[i])[:4] for i in range(n_ch)]
+
+    neighbors = []
+    for i in range(n_ch):
+        order = np.argsort(dists[i])
+        order = order[order != i]     # remove self
+        neighbors.append(np.concatenate(([i], order[:4])))  # self + 4 nearest
 
     sl_acc = np.zeros((n_ch, n_times))
 
@@ -152,10 +146,10 @@ def searchlight_decoding(X, y, ch_coords):
 
         for ch in range(n_ch):
 
-            clf = get_classifier()
             spatial_subset = neighbors[ch]
 
             for t in range(n_times):
+                clf = get_classifier()
                 clf.fit(X_train[:, spatial_subset, t], y_train)
                 preds = clf.predict(X_test[:, spatial_subset, t])
                 sl_acc[ch, t] += accuracy_score(y_test, preds)
@@ -187,6 +181,7 @@ def run_pipeline(path_to_data, results_dir):
         df = pd.read_csv(tsv_path, sep="\t")
         events = df.iloc[:, [4, 6, 8]].values
 
+        # Behavioral matrices
         p1 = np.zeros((len(events), 5))
         p1[:, :3] = events
         p1[1:, 3:] = events[:-1, :2]
@@ -214,7 +209,6 @@ def run_pipeline(path_to_data, results_dir):
             epochs = mne.read_epochs(epo_path, preload=True, verbose=False)
             epochs.set_eeg_reference("average", verbose=False)
 
-            # Remove first trial of each block
             rem_idx = np.arange(0, 480, 40)
             epochs.drop(rem_idx, verbose=False)
             behav = np.delete(behav, rem_idx, axis=0)
