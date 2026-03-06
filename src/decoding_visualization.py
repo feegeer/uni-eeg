@@ -41,7 +41,7 @@ PHASES = {'Decision': (0, 2), 'Response': (2, 4), 'Feedback': (4, 5)}
 
 PHASE_COLORS = {'Decision': '#F5A623', 'Response': '#D0021B', 'Feedback': '#9013FE'}
 
-results_dir = os.path.join("src", "ds006761", "derivatives", "python_replication")
+results_dir = os.path.join("src", "ds006761", "new_derivatives", "eegnet_replication")
 
 # ==========================================================
 # LOAD DECODING FILES

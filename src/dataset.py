@@ -416,8 +416,6 @@ class BidsDataset:
 
 
 # --- Utility Functions ---
-
-
 def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Event]:
     events = []
     fname = bids_root / subject_id / "eeg" / f"{subject_id}_task-RPS_events.tsv"

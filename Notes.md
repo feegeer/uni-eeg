@@ -5,28 +5,27 @@ sub-16 has 136 channels instead of 64 for some reason -- they probably used diff
 
 **---Scheduled Meeting on 09/03---**
 
-## Plan (To-Do):
-1. Come up with ideas for improving/changing preprocessing
-2. Train all 3 models (LDA, LogReg, SVM) on 
-  a. original preprocessing 
-  b. new preprocessing
-3. Finalize Markov chain reponse predictability code
-4. Generate plots for ...
-  a. original preprocessing steps
-  b. new preprocessing steps
-  c. Decoding model plots for original processing
-  d. Decoding model plots for new processing
-  e. Markov chain response predictability
-5. Add all plots to the Google Drive folder
-6. Work on the report
-7. Implement preprocessing changes
+## Tasks:
+During the meeting:
+- Ask if we should spend time writing matlab functions in python
+- Show images from preprocessing steps --> Emma
+- LDA accuracy plot --> Felipe
+- EEGNet accuracy plot --> Felipe
+- Markov plot --> Radu
+- Statistical plots --> Emma
 
-Week 22/02-28/02:
-- Tasks: 1, 2.a, 3, 4.a, 4.c
+Emma:
+- Write about preprocessing methods
+- Generate preprocessing images
+- Replicated Matlab code and save intermediary results
+- Come up and try out different filtering methods to talk about during the meeting
 
-Week 01/03-07/03:
-- Tasks: 2.b, 4.*, 5, 7
+Radu:
+- Markov ready
+- Write about EEGNet
 
+Felipe:
+- Get plots for LDA and EEGNet
 
 
 *Old notes...*
