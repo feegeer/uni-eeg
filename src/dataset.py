@@ -22,9 +22,9 @@ BIOSEMI_ORDERED_CODES = [
 ]
 
 # Get the standard 10-20 names from MNE's built-in montage (64 channels)
-montage_1020_ref = mne.channels.make_standard_montage('standard_1020')
-TEN_TWENTY_ORDERED_LABELS = montage_1020_ref.ch_names[:64]
-BIOSEMI_CODE_TO_1020_LABEL = dict(zip(BIOSEMI_ORDERED_CODES, TEN_TWENTY_ORDERED_LABELS))
+montage_1020_ref = mne.channels.make_standard_montage('biosemi64')
+TEN_TWENTY_LABELS = montage_1020_ref.ch_names[:64]
+BIOSEMI_CODE_TO_1020_LABEL = dict(zip(BIOSEMI_ORDERED_CODES, TEN_TWENTY_LABELS))
 
 # 1. Load the 3D Coordinates from the .mat file
 try:
@@ -36,12 +36,8 @@ except FileNotFoundError:
     print("FATAL ERROR: biosemi64.mat not found. Please update the file path in the script.")
     raise
 
-# 2. Create a custom MNE montage from the .mat data.
-ch_pos_dict_3d = dict(zip(TEN_TWENTY_ORDERED_LABELS, biosemi_coords_3d))
-FULL_MNE_BISEOMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
-
-
-# --- Data Structures (Enums and Dataclasses) ---
+ch_pos_dict_3d = dict(zip(TEN_TWENTY_LABELS, biosemi_coords_3d))
+FULL_MNE_BIOSEMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -251,7 +247,7 @@ class Subject:
 
     def _prepare_players(self, raw):
         """Splits data, renames channels, and applies the necessary MNE montage."""
-        # Channel selection logic matching the MATLAB script's use of '2-' for P1 and '1-' for P2
+        # Channel selection logic matching the MATLAB script's use of '2-' for player1 and '1-' for player2
         p1_chans = [ch for ch in raw.ch_names if ch.startswith("2-")]
         p2_chans = [ch for ch in raw.ch_names if ch.startswith("1-")]
 
@@ -260,7 +256,7 @@ class Subject:
 
         info_p1 = mne.pick_info(raw.info, p1_idx)
         info_p2 = mne.pick_info(raw.info, p2_idx)
-        
+
         raw_p1 = mne.io.RawArray(raw.get_data(picks=p1_idx), info_p1, verbose=False)
         raw_p2 = mne.io.RawArray(raw.get_data(picks=p2_idx), info_p2, verbose=False)
 
@@ -269,29 +265,29 @@ class Subject:
             # --- 0. Compute valid channels after stripping prefix ---
             stripped_chs = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
             valid_chs = [ch for ch in stripped_chs.values() if ch in BIOSEMI_CODE_TO_1020_LABEL]
-            
+
             # --- 1. Pick only the valid channels to avoid duplicates ---
             pick_idx = [inst.ch_names.index(ch_name) for ch_name, new_name in stripped_chs.items() if new_name in valid_chs]
             inst.pick(pick_idx, verbose=False)
-            
+
             # --- 2. Rename by stripping prefix ---
             rename_map_prefix = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
             inst.rename_channels(rename_map_prefix)
-            
+
             # --- 3. Apply BioSemi → 10-20 mapping ---
             final_map = {k: v for k, v in BIOSEMI_CODE_TO_1020_LABEL.items() if k in inst.ch_names}
             inst.rename_channels(final_map)
-            
+
             # --- 4. Set all channels to EEG type ---
             inst.set_channel_types({ch: 'eeg' for ch in inst.ch_names}, verbose=False)
-            
+
             # --- 5. Keep only canonical BioSemi 64 channels ---
-            canonical_chs = FULL_MNE_BISEOMI_MONTAGE.ch_names
+            canonical_chs = FULL_MNE_BIOSEMI_MONTAGE.ch_names
             inst.pick_channels([ch for ch in canonical_chs if ch in inst.ch_names], ordered=True, verbose=False)
-            
+
             # --- 6. Apply the 3D montage ---
-            inst.set_montage(FULL_MNE_BISEOMI_MONTAGE, match_case=False, verbose=False)
-            
+            inst.set_montage(FULL_MNE_BIOSEMI_MONTAGE, match_case=False, verbose=False)
+
             print(f"  {label}: Channels fixed. Total channels now: {len(inst.ch_names)}")
 
         fix_names(raw_p1, "2-", "Player 1")
@@ -415,7 +411,6 @@ class BidsDataset:
         raise NotImplementedError("average_results method not implemented yet.")
 
 
-# --- Utility Functions ---
 def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Event]:
     events = []
     fname = bids_root / subject_id / "eeg" / f"{subject_id}_task-RPS_events.tsv"
