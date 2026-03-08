@@ -4,11 +4,13 @@ import csv
 import dataclasses
 import enum
 import gc
+import math
 import pathlib
 from typing import Any
 
 import mne
 import mne_bids
+import numpy as np
 import scipy.io
 
 # --- Global Constants & Setup (Mimicking FieldTrip Layout/Geometry Loading) ---
@@ -38,6 +40,16 @@ except FileNotFoundError:
 
 ch_pos_dict_3d = dict(zip(TEN_TWENTY_LABELS, biosemi_coords_3d))
 FULL_MNE_BIOSEMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
+
+BIOSEMI_DISTANCE_MATRIX = np.linalg.norm(biosemi_coords_3d[:, None, :] - biosemi_coords_3d[None, :, :], axis=2)
+
+FIELDTRIP_NEIGHBORS = {}
+for i, ch in enumerate(TEN_TWENTY_LABELS):
+    neighbor_index = [
+        j for j in range(len(TEN_TWENTY_LABELS))
+        if j != i and BIOSEMI_DISTANCE_MATRIX[i, j] < 0.5
+    ]
+    FIELDTRIP_NEIGHBORS[ch] = [TEN_TWENTY_LABELS[j] for j in neighbor_index]
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -220,23 +232,24 @@ class Subject:
         del raw
         gc.collect()
 
-        # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair)
-        self._interpolate(raw_p1, self.player1, "Player 1")
-        self._interpolate(raw_p2, self.player2, "Player 2")
-
-        # 5. Downsample (MATLAB's ft_resampledata)
-        # > the original code uses 256Hz --> however, the matlab function rounds the frequency to match
-        #   the epoch time boundaries (-0.2 and 5.0) --> mne doesn't do that, so we manually round
-        #   ourselves to the closest, standard, and divisible by the boundaries frequency.
-        raw_p1.resample(250, verbose=False)
-        raw_p2.resample(250, verbose=False)
-
         # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
         epochs_p1 = self._create_epochs(raw_p1)
         epochs_p2 = self._create_epochs(raw_p2)
 
         del raw_p1, raw_p2
         gc.collect()
+
+        # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair equivalent)
+        self._interpolate(epochs_p1, self.player1, "Player 1")
+        self._interpolate(epochs_p2, self.player2, "Player 2")
+
+        if not epochs_p1.preload:
+            epochs_p1.load_data()
+        epochs_p1.resample(256, verbose=False)
+
+        if not epochs_p2.preload:
+            epochs_p2.load_data()
+        epochs_p2.resample(256, verbose=False)
 
         # 7. Save (MATLAB's save function)
         self._save(epochs_p1, epochs_p2, output_dir)
@@ -246,73 +259,121 @@ class Subject:
         print(f"  Done {self.id}. Memory cleared.\n")
 
     def _prepare_players(self, raw):
-        """Splits data, renames channels, and applies the necessary MNE montage."""
-        # Channel selection logic matching the MATLAB script's use of '2-' for player1 and '1-' for player2
-        p1_chans = [ch for ch in raw.ch_names if ch.startswith("2-")]
-        p2_chans = [ch for ch in raw.ch_names if ch.startswith("1-")]
+        def prepare_one_player(raw, player_prefix):
+            expected_chs = [f"{player_prefix}{code}" for code in BIOSEMI_ORDERED_CODES]
 
-        p1_idx = mne.pick_channels(raw.ch_names, p1_chans)
-        p2_idx = mne.pick_channels(raw.ch_names, p2_chans)
+            missing = [ch for ch in expected_chs if ch not in raw.ch_names]
+            if missing:
+                raise ValueError(f"Missing expected EEG channels for {player_prefix}: {missing}")
 
-        info_p1 = mne.pick_info(raw.info, p1_idx)
-        info_p2 = mne.pick_info(raw.info, p2_idx)
+            player_raw = raw.copy().pick(expected_chs)
+            rename_map = dict(zip(expected_chs, TEN_TWENTY_LABELS))
+            player_raw.rename_channels(rename_map)
 
-        raw_p1 = mne.io.RawArray(raw.get_data(picks=p1_idx), info_p1, verbose=False)
-        raw_p2 = mne.io.RawArray(raw.get_data(picks=p2_idx), info_p2, verbose=False)
+            player_raw.set_channel_types({ch: "eeg" for ch in player_raw.ch_names}, verbose=False)
+            player_raw.set_montage(FULL_MNE_BIOSEMI_MONTAGE, match_case=False, verbose=False)
 
-        # Helper function to rename, apply map, and set montage (The critical function)
-        def fix_names(inst, prefix, label):
-            # --- 0. Compute valid channels after stripping prefix ---
-            stripped_chs = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
-            valid_chs = [ch for ch in stripped_chs.values() if ch in BIOSEMI_CODE_TO_1020_LABEL]
+            return player_raw
 
-            # --- 1. Pick only the valid channels to avoid duplicates ---
-            pick_idx = [inst.ch_names.index(ch_name) for ch_name, new_name in stripped_chs.items() if new_name in valid_chs]
-            inst.pick(pick_idx, verbose=False)
-
-            # --- 2. Rename by stripping prefix ---
-            rename_map_prefix = {ch: ch.replace(prefix, "") for ch in inst.ch_names}
-            inst.rename_channels(rename_map_prefix)
-
-            # --- 3. Apply BioSemi → 10-20 mapping ---
-            final_map = {k: v for k, v in BIOSEMI_CODE_TO_1020_LABEL.items() if k in inst.ch_names}
-            inst.rename_channels(final_map)
-
-            # --- 4. Set all channels to EEG type ---
-            inst.set_channel_types({ch: 'eeg' for ch in inst.ch_names}, verbose=False)
-
-            # --- 5. Keep only canonical BioSemi 64 channels ---
-            canonical_chs = FULL_MNE_BIOSEMI_MONTAGE.ch_names
-            inst.pick_channels([ch for ch in canonical_chs if ch in inst.ch_names], ordered=True, verbose=False)
-
-            # --- 6. Apply the 3D montage ---
-            inst.set_montage(FULL_MNE_BIOSEMI_MONTAGE, match_case=False, verbose=False)
-
-            print(f"  {label}: Channels fixed. Total channels now: {len(inst.ch_names)}")
-
-        fix_names(raw_p1, "2-", "Player 1")
-        fix_names(raw_p2, "1-", "Player 2")
+        raw_p1 = prepare_one_player(raw, "2-")
+        raw_p2 = prepare_one_player(raw, "1-")
         return raw_p1, raw_p2
 
-    def _interpolate(self, raw, player_meta, label):
-        """Handles bad channel interpolation (MATLAB's ft_channelrepair)."""
-        bads = [ch for ch in player_meta.preprocessing_channels_fixed if ch in raw.ch_names]
-        if bads:
-            raw.info['bads'] = bads
-            raw.interpolate_bads(reset_bads=True, verbose=False)
-            print(f"  {label}: Interpolated {bads}")
+    # def _interpolate(self, instance, player_meta, label):
+    #     """Handles bad channel interpolation (MATLAB's ft_channelrepair)."""
+    #     bads = [ch for ch in player_meta.preprocessing_channels_fixed if ch in instance.ch_names]
+    #     if bads:
+    #         instance.info['bads'] = bads
+    #         instance.interpolate_bads(reset_bads=True, verbose=False)
+    #         print(f"  {label}: Interpolated {bads}")
 
-    def _create_epochs(self, raw):
-        """Converts continuous data into segmented trials (MATLAB's ft_preprocessing with cfg.trl)."""
-        onset_times = [e.onset for e in self.events]
-        annot = mne.Annotations(onset=onset_times,
-                                duration=[0] * len(onset_times),
-                                description=['trial_start'] * len(onset_times))
-        raw.set_annotations(annot)
-        # Create event array from annotations
-        events, _ = mne.events_from_annotations(raw, verbose=False)
-        # Epoching (-0.2s pre-stimulus, 5.0s post-stimulus)
-        return mne.Epochs(raw, events, tmin=-0.2, tmax=5.0, baseline=None, preload=False, verbose=False)
+    def _interpolate(self, epochs, player_meta, label):
+        """
+        Closer match to FieldTrip ft_channelrepair(method='weighted'):
+
+        1. Build a full channel x channel repair matrix.
+        2. Replace each bad-channel row with inverse-distance weights on good neighbours.
+        3. Apply that same repair matrix to each epoch in one shot.
+
+        Operates in place on an MNE Epochs object.
+        """
+        bads = [ch for ch in player_meta.preprocessing_channels_fixed if ch in epochs.ch_names]
+        if not bads:
+            return
+
+        if not epochs.preload:
+            epochs.load_data()
+
+        data = epochs.get_data(copy=False)  # shape: (n_epochs, n_channels, n_times)
+        ch_names = epochs.ch_names
+        ch_to_idx = {ch: i for i, ch in enumerate(ch_names)}
+        bad_set = set(bads)
+
+        n_channels = len(ch_names)
+        repair = np.eye(n_channels, dtype=float)
+
+        unable = []
+
+        for bad_ch in bads:
+            bad_idx = ch_to_idx[bad_ch]
+
+            # FieldTrip starts from the neighbour definition and removes bad channels
+            good_neighs = [
+                ch for ch in FIELDTRIP_NEIGHBORS[bad_ch]
+                if ch in ch_to_idx and ch not in bad_set
+            ]
+
+            # Zero out self-copying for this bad channel
+            repair[bad_idx, bad_idx] = 0.0
+
+            if len(good_neighs) == 0:
+                unable.append(bad_idx)
+                continue
+
+            neigh_idx = np.array([ch_to_idx[ch] for ch in good_neighs], dtype=int)
+
+            # Distances from this bad channel to its good neighbours
+            distances_to_good_neighbors = BIOSEMI_DISTANCE_MATRIX[bad_idx, neigh_idx]
+
+            # Inverse-distance weights
+            if np.any(distances_to_good_neighbors == 0):
+                weights = np.zeros_like(distances_to_good_neighbors, dtype=float)
+                weights[distances_to_good_neighbors == 0] = 1.0 / np.sum(distances_to_good_neighbors == 0)
+            else:
+                weights = 1.0 / distances_to_good_neighbors
+                weights = weights / weights.sum()
+
+            # Replace the bad-channel row with neighbour weights
+            repair[bad_idx, :] = 0.0
+            repair[bad_idx, neigh_idx] = weights
+
+        # Apply the same repair matrix to every epoch:
+        # For each epoch, (channels x channels) @ (channels x time) -> (channels x time)
+        repaired_data = np.einsum("ij,ejt->eit", repair, data)
+
+        # FieldTrip sets unreconstructable bad channels to NaN
+        if unable:
+            repaired_data[:, unable, :] = np.nan
+
+        data[:] = repaired_data
+
+        epochs.info["bads"] = []
+        print(f"  {label}: Interpolated {bads} with FieldTrip-style weighted neighbours")
+
+    def _create_epochs(self, raw, sample_frequency: int = 2048):
+        onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
+
+        prestim_samp = math.ceil(0.2 * sample_frequency) # 410
+        poststim_samp = math.ceil(5.0 * sample_frequency) # 10240
+
+        # each row is [sample ID, dummy value for previous value, event ID (all events are of the same type, so dummy value 1 is ok here)]
+        events = np.column_stack([onset_samples, np.zeros(len(onset_samples), dtype=int), np.ones(len(onset_samples), dtype=int)])
+
+        tmin = - prestim_samp / sample_frequency
+        tmax = poststim_samp / sample_frequency
+
+        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None)
+        return epochs
 
     def _save(self, ep1, ep2, output_dir):
         """Saves the final Epochs objects to disk (MATLAB's save function)."""
