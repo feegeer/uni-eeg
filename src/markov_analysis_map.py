@@ -155,7 +155,7 @@ def run_markov_analysis(data_path: Path):
             Mean_Accuracy[p, ppt, :] = mean_acc
             M_pred[p, ppt, :, :, :] = pred
 
-    out_path = data_path / "derivatives"
+    out_path = data_path / "markov_analysis"
     out_path.mkdir(exist_ok=True)
 
     np.savez(

@@ -1,11 +1,15 @@
 import pathlib
 import mne
 import dataset
-import visualization
+import eeg_visualization
 
+
+DATA_PATH = pathlib.Path("src/ds006761")
+DATASET_VERSION = "v2"
+PREPROCESSED_PATH = DATA_PATH / DATASET_VERSION / "preprocessed"
 
 def main():
-    bids_dataset = dataset.BidsDataset.get_from(pathlib.Path("src\\ds006761"))
+    bids_dataset = dataset.BidsDataset.get_from(DATA_PATH, PREPROCESSED_PATH)
     bids_dataset.preprocess()
     # bids_dataset.inspect_derivatives()
     return
@@ -21,7 +25,7 @@ def main():
     labels = [" wins", "Winner looses", "Draw"]
     colors = ["#Winner2d708e", "#404788", "#481567"]
     yticks = list(range(20, 50, 5))
-    visualization.draw_raincloud_plot(data, labels, "Game outcome", colors, yticks, 100 / 3)
+    eeg_visualization.draw_raincloud_plot(data, labels, "Game outcome", colors, yticks, 100 / 3)
 
     #  Figure 1d
     most_mid_least_played = [
@@ -37,7 +41,7 @@ def main():
 
     labels = ["Most Played", "Mid Played", "Least Played"]
     colors = ["#cb4149", "#f5dc4e", "#f78310"]
-    visualization.draw_raincloud_plot(data, labels, "Response played", colors, yticks, 100 / 3)
+    eeg_visualization.draw_raincloud_plot(data, labels, "Response played", colors, yticks, 100 / 3)
 
     # Figure 1e
     data = [[], [], []]
@@ -50,7 +54,7 @@ def main():
     labels = ["After win", "After loss", "After draw"]
     colors = ["#2d708e", "#404788", "#481567"]
     yticks = list(range(20, 120, 20))
-    visualization.draw_raincloud_plot(data, labels, "Game-to-game response change", colors, yticks, 200 / 3)
+    eeg_visualization.draw_raincloud_plot(data, labels, "Game-to-game response change", colors, yticks, 200 / 3)
 
 
 def verify_output(output_dir: pathlib.Path, pair_num: str = "01", player_num: int = 1):

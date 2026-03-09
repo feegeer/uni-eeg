@@ -378,11 +378,10 @@ class Subject:
     def _save(self, ep1, ep2, output_dir):
         """Saves the final Epochs objects to disk (MATLAB's save function)."""
         pair_num = self.id.replace('sub-', '')
-        out_folder = output_dir / "new_derivatives"
-        out_folder.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        p1_fname = out_folder / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
-        p2_fname = out_folder / f"pair-{pair_num}_player-2_task-RPS_eeg_epo.fif"
+        p1_fname = output_dir / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
+        p2_fname = output_dir / f"pair-{pair_num}_player-2_task-RPS_eeg_epo.fif"
 
         ep1.save(p1_fname, overwrite=True, verbose=False)
         ep2.save(p2_fname, overwrite=True, verbose=False)
@@ -392,9 +391,10 @@ class Subject:
 class BidsDataset:
     bids_root: pathlib.Path
     subjects: list[Subject]
+    output_path: pathlib.Path
 
     @staticmethod
-    def get_from(bids_root: pathlib.Path) -> "BidsDataset":
+    def get_from(bids_root: pathlib.Path, output_path: pathlib.Path) -> "BidsDataset":
         subjects = []
         tsv_path = bids_root / "participants.tsv"
         with open(tsv_path, newline="") as tsvfile:
@@ -403,17 +403,16 @@ class BidsDataset:
                 # Excluded subjects matching the MATLAB script's exclusions: 10, 23, 24
                 if row["participant_id"] not in ["sub-10", "sub-23", "sub-24"]:
                     subjects.append(Subject.from_tsv_row(bids_root, row))
-        return BidsDataset(bids_root, subjects)
+        return BidsDataset(bids_root, subjects, output_path)
 
     def preprocess(self) -> None:
-        output_path = self.bids_root
         print(f"Starting preprocessing for {len(self.subjects)} subjects.")
-        print(f"Outputting processed data to: {output_path / 'new_derivatives'}")
+        print(f"Outputting processed data to: {self.output_path}")
 
-        sub_completed = []
+        sub_completed = []  # Add subs that should not be included
         for subject in self.subjects:
-            if subject.id not in sub_completed:
-                subject.preprocess(self.bids_root, output_path)
+            if subject.id not in sub_not_completed:
+                subject.preprocess(self.bids_root, self.output_path)
         # self.average_results()
 
     def inspect_derivatives(self) -> None:
@@ -427,8 +426,7 @@ class BidsDataset:
 
         first_subject_id = self.subjects[0].id
         pair_num = first_subject_id.replace('sub-', '')
-        output_path = self.bids_root / "new_derivatives"
-        p1_fname = output_path / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
+        p1_fname = self.output_path / f"pair-{pair_num}_player-1_task-RPS_eeg_epo.fif"
 
         print(f"\n--- Inspecting first derivative file: {p1_fname.name} ---")
 

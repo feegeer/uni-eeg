@@ -10,7 +10,7 @@ from markov_analysis_map import compute_markov_predictability
 # DATA PATH
 # =====================================================
 
-DATA_PATH = Path(r"C:\\Users\\poten\\uni-eeg\\src\\ds006761")
+DATA_PATH = Path("src/ds006761")
 
 window_sizes = range(5, 101)
 all_participants = []
