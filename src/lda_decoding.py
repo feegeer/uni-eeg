@@ -1,16 +1,11 @@
 """
-Decoding script (Python equivalent of the MATLAB decoding pipeline):
-  - Decode own & opponent's response for current & previous trial
-  - Uses MNE for EEG data handling, custom LDA matching CoSMoMVPA
-  - Mirrors CoSMoMVPA's decoding pipeline from the original MATLAB code
+EEG decoding script for the RPS dataset.
 
-Dependencies: mne, numpy, pandas
+Python version of the original MATLAB / CoSMoMVPA decoding pipeline.
+Decodes players' own and opponent responses (current + previous trial)
+using LDA and cross-validation.
 
-Notes:
-  - We excluded pair 10 (major CMS issues for ppt 2), 23 (no triggers),
-    and 24 (major CMS issues for ppt 2 - first 32 trials only)
-  - The preprocessing Python script saves MNE Epochs as .fif files
-  - This script expects preprocessed data in {data_root}/new_derivatives/
+Requires: mne, numpy, pandas
 """
 
 import pathlib
@@ -19,65 +14,49 @@ import mne
 import numpy as np
 import pandas as pd
 
-# Suppress MNE verbosity
 mne.set_log_level("WARNING")
 
 
-# ---------------------------------------------------------------------------
-# Global constants
-# ---------------------------------------------------------------------------
+# --------------------
+# Paths and constants
+# --------------------
+
 PATH_TO_DATA = pathlib.Path("src/ds006761")
 PATH_TO_DERIVATIVES = PATH_TO_DATA / "v2"
 
 PAIR_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
-NUM_PAIRS = len(PAIR_IDS)
+
 NUM_TRIALS = 480
-NUM_CHAN = 64
-NUM_BLOCKS = 12
 TRIALS_PER_BLOCK = 40
 
-# Time-bin edges (in seconds) used to average EEG within each phase
-# Parts A & B: 0-2 s in 250 ms bins -> 8 bins each
+# Parts A and B: 0–2 s in 250 ms bins (Decision + Response phases)
 TIME_WINDOWS_AB = np.column_stack(
     [np.arange(0, 2.0, 0.25), np.arange(0.25, 2.25, 0.25)]
-)  # shape (8, 2)
+)
 
-# Part C: 0-1 s in 250 ms bins -> 4 bins
+# Part C: 0–1 s in 250 ms bins (Feedback)
 TIME_WINDOWS_C = np.column_stack(
     [np.arange(0, 1.0, 0.25), np.arange(0.25, 1.25, 0.25)]
-)  # shape (4, 2)
-
-# Total number of time bins: 8 (Decision) + 8 (Response) + 4 (Feedback) = 20
-NUM_TIME_BINS = TIME_WINDOWS_AB.shape[0] * 2 + TIME_WINDOWS_C.shape[0]
+)
 
 
-# ---------------------------------------------------------------------------
+# --------------------
 # CoSMoMVPA-equivalent helper functions
-# ---------------------------------------------------------------------------
-
-def cosmo_sample_unique(
-    k: int, n: int, count: int, seed: int | None = None
-) -> np.ndarray:
+# --------------------
+def cosmo_sample_unique(k, n, count, seed=None):
     """
-    Sample without replacement from 0:n-1 in a balanced manner.
+    Balanced sampling without replacement.
 
-    Mirrors CoSMoMVPA's cosmo_sample_unique exactly:
-      - Returns a (k, count) array of indices in range [0, n-1]
-      - Each column has no repeated values
-      - Across the entire matrix, each value in 0:n-1 occurs
-        approximately equally often
+    Args:
+        k (int): number of samples per subset
+        n (int): number of available samples
+        count (int): number of subsets to generate
+        seed (int, optional): random seed
 
-    The algorithm:
-      1. Generate (count+1) random permutations of 0:n-1, concatenate
-         into a flat vector.
-      2. Walk through this vector, filling column by column, skipping
-         values already used in the current column or already visited
-         globally.
+    Returns:
+        np.ndarray: array of shape (k, count) with sampled indices
     """
-    if seed is not None:
-        rng = np.random.default_rng(seed)
-    else:
-        rng = np.random.default_rng()
+    rng = np.random.default_rng(seed)
 
     # Generate (count+1) random permutations of 0:n-1, stacked as columns
     # CoSMoMVPA does: v = cosmo_rand(n, count+1, 'seed', s);
@@ -111,24 +90,19 @@ def cosmo_sample_unique(
 
     # Sort each column (matching MATLAB: samples = sort(samples, 1))
     samples.sort(axis=0)
-
     return samples
 
 
-def cosmo_chunkize(targets: np.ndarray, n_chunks: int) -> np.ndarray:
+def cosmo_chunkize(targets, n_chunks):
     """
-    Assign chunk labels (1..n_chunks) so that each chunk has roughly
-    balanced class counts. Mirrors cosmo_chunkize in CoSMoMVPA.
+    Assign cross-validation fold labels while keeping classes balanced.
 
-    Since input chunks are all unique (one per trial), the function
-    groups individual trials into n_chunks balanced folds. CoSMoMVPA
-    does this by building a histogram of target counts per input chunk,
-    then finding the best balanced partition.
+    Args:
+        targets (np.ndarray): class labels for each sample
+        n_chunks (int): number of folds
 
-    For single-trial input chunks (the case in this pipeline), this
-    simplifies to: for each target class, distribute trials as evenly
-    as possible across output chunks in sequential order (no shuffling,
-    matching CoSMoMVPA's deterministic optimization).
+    Returns:
+        np.ndarray: chunk index for each sample (1..n_chunks)
     """
     n = len(targets)
     chunks = np.zeros(n, dtype=int)
@@ -145,38 +119,23 @@ def cosmo_chunkize(targets: np.ndarray, n_chunks: int) -> np.ndarray:
     return chunks
 
 
-def cosmo_average_samples(
-    data: np.ndarray,
-    targets: np.ndarray,
-    chunks: np.ndarray,
-    count: int = 4,
-    repeats: int = 20,
-    seed: int = 1,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def cosmo_average_samples(data, targets, chunks, count=4, repeats=20, seed=1):
     """
-    Create pseudo-trials by averaging `count` random samples of the same
-    target and chunk, repeated `repeats` times.
+    Create pseudo-trials by averaging samples within each (target, chunk).
 
-    Mirrors cosmo_average_samples(ds, 'count', 4, 'repeats', 20, 'seed', 1).
+    Args:
+        data (np.ndarray): EEG data (n_trials, n_channels, n_timebins)
+        targets (np.ndarray): class label for each trial
+        chunks (np.ndarray): fold assignment for each trial
+        count (int): number of trials to average together
+        repeats (int): number of pseudo-trials per condition
+        seed (int): random seed
 
-    Uses cosmo_sample_unique internally to ensure balanced sampling:
-    across all repeats, each original trial is used approximately
-    the same number of times.
-
-    Parameters
-    ----------
-    data : (n_trials, n_channels, n_timebins)
-    targets : (n_trials,)
-    chunks : (n_trials,)
-    count : number of trials to average together
-    repeats : how many pseudo-trials per (target, chunk) combination
-    seed : random seed
-
-    Returns
-    -------
-    avg_data : (n_pseudo, n_channels, n_timebins)
-    avg_targets : (n_pseudo,)
-    avg_chunks : (n_pseudo,)
+    Returns:
+        tuple:
+            avg_data (np.ndarray): pseudo-trials
+            avg_targets (np.ndarray): labels
+            avg_chunks (np.ndarray): chunk assignments
     """
     unique_targets = np.unique(targets)
     unique_chunks = np.unique(chunks)
@@ -214,38 +173,18 @@ def cosmo_average_samples(
     )
 
 
-def regularised_lda_classify(
-    train_data: np.ndarray,
-    train_labels: np.ndarray,
-    test_data: np.ndarray,
-    reg: float = 0.01,
-) -> np.ndarray:
+def regularised_lda_classify(train_data, train_labels, test_data, reg=0.01):
     """
-    Regularised LDA classifier matching CoSMoMVPA's cosmo_classify_lda.
+    Train regularised LDA and predict labels for test data.
 
-    CoSMoMVPA computes:
-      1. Pooled within-class covariance: class_cov = sum_k (X_k - mu_k)' * (X_k - mu_k)
-      2. Normalise: class_cov = class_cov / N_train
-      3. Regularisation: reg_term = eye(p) * trace(class_cov) / max(1, p)
-      4. class_cov_reg = class_cov + reg_term * regularization
-      5. class_weight = class_mean / class_cov_reg  (i.e. class_mean @ inv(class_cov_reg))
-      6. class_offset = sum(class_weight .* class_mean, axis=1)
-      7. prediction = argmax(test @ class_weight' - 0.5 * class_offset)
+    Args:
+        train_data (np.ndarray): training features (n_train, n_features)
+        train_labels (np.ndarray): training labels
+        test_data (np.ndarray): test features (n_test, n_features)
+        reg (float): regularisation strength
 
-    NOTE: This differs from scikit-learn's shrinkage LDA which uses a convex
-    combination (1-lambda)*S + lambda*trace(S)/p*I. CoSMoMVPA instead *adds*
-    the regularisation term: S + lambda*trace(S)/p*I.
-
-    Parameters
-    ----------
-    train_data : (n_train, n_features)
-    train_labels : (n_train,)
-    test_data : (n_test, n_features)
-    reg : regularisation parameter (default 0.01 matching MATLAB)
-
-    Returns
-    -------
-    predictions : (n_test,) predicted class labels
+    Returns:
+        np.ndarray: predicted class labels
     """
     classes = np.unique(train_labels)
     n_classes = len(classes)
@@ -281,27 +220,19 @@ def regularised_lda_classify(
     return predictions
 
 
-def run_crossvalidation(
-    data: np.ndarray,
-    targets: np.ndarray,
-    chunks: np.ndarray,
-    n_folds: int = 10,
-    reg: float = 0.01,
-) -> float:
+def run_crossvalidation(data, targets, chunks, n_folds=10, reg=0.01):
     """
-    N-fold cross-validation using regularised LDA on a single time-bin.
+    Run n-fold cross-validated decoding.
 
-    Mirrors cosmo_crossvalidation_measure with cosmo_nfold_partitioner.
+    Args:
+        data (np.ndarray): feature matrix (n_samples, n_features)
+        targets (np.ndarray): class labels
+        chunks (np.ndarray): fold assignments
+        n_folds (int): number of folds
+        reg (float): LDA regularisation
 
-    Parameters
-    ----------
-    data : (n_samples, n_features) - features for one time bin
-    targets : (n_samples,)
-    chunks : (n_samples,) - fold assignments
-
-    Returns
-    -------
-    accuracy : float in [0, 1]
+    Returns:
+        float: classification accuracy
     """
     unique_chunks = np.unique(chunks)
     assert len(unique_chunks) == n_folds, (
@@ -325,37 +256,23 @@ def run_crossvalidation(
     return correct / total
 
 
-def run_searchlight_channel(
-    data: np.ndarray,
-    targets: np.ndarray,
-    chunks: np.ndarray,
-    ch_names: list[str],
-    dist_matrix: np.ndarray,
-    n_neighbours: int = 4,
-    n_folds: int = 10,
-    reg: float = 0.01,
-) -> np.ndarray:
+def run_searchlight_channel(data, targets, chunks, ch_names, dist_matrix, 
+                            n_neighbours=4, n_folds=10, reg=0.01):
     """
-    Channel searchlight: for each channel, select it + its n_neighbours
-    nearest neighbours and run cross-validated decoding.
+    Channel searchlight decoding using nearest neighbours.
 
-    Mirrors cosmo_meeg_chan_neighborhood(ds, 'count', 4) combined with
-    cosmo_searchlight. The 'count' parameter in CoSMoMVPA selects exactly
-    the N nearest neighbours for each channel (not including self).
+    Args:
+        data (np.ndarray): EEG data (n_samples, n_channels, n_timebins)
+        targets (np.ndarray): class labels
+        chunks (np.ndarray): cross-validation folds
+        ch_names (list[str]): channel names
+        dist_matrix (np.ndarray): pairwise channel distances
+        n_neighbours (int): number of neighbours in searchlight
+        n_folds (int): CV folds
+        reg (float): LDA regularisation
 
-    Parameters
-    ----------
-    data : (n_samples, n_channels, n_timebins)
-    targets, chunks : (n_samples,)
-    ch_names : list of channel names
-    dist_matrix : (n_channels, n_channels) pairwise distance matrix
-    n_neighbours : number of nearest neighbours to include (default 4)
-    n_folds : number of cross-validation folds
-    reg : LDA regularisation parameter
-
-    Returns
-    -------
-    sl_acc : (n_channels, n_timebins) - accuracy per channel per time bin
+    Returns:
+        np.ndarray: accuracy (n_channels, n_timebins)
     """
     n_channels = len(ch_names)
     n_timebins = data.shape[2]
@@ -382,25 +299,16 @@ def run_searchlight_channel(
     return sl_acc
 
 
-# ---------------------------------------------------------------------------
-# Distance matrix computation
-# ---------------------------------------------------------------------------
-
-def compute_channel_distance_matrix(
-    ch_names: list[str],
-    montage: mne.channels.DigMontage,
-) -> np.ndarray:
+def compute_channel_distance_matrix(ch_names, montage):
     """
-    Compute pairwise Euclidean distance matrix between channels.
+    Compute Euclidean distance between EEG channels.
 
-    Parameters
-    ----------
-    ch_names : list of channel names
-    montage : MNE montage with 3D positions
+    Args:
+        ch_names (list[str]): channel names
+        montage (mne.channels.DigMontage): electrode positions
 
-    Returns
-    -------
-    dist_matrix : (n_channels, n_channels) symmetric distance matrix
+    Returns:
+        np.ndarray: distance matrix (n_channels, n_channels)
     """
     pos = montage.get_positions()
     ch_pos = pos["ch_pos"]
@@ -411,28 +319,36 @@ def compute_channel_distance_matrix(
     return dist_matrix
 
 
-# ---------------------------------------------------------------------------
-# Main data loading and epoching helpers
-# ---------------------------------------------------------------------------
+# --------------------
+# Data helpers
+# --------------------
 
-def load_events(data_root: pathlib.Path, pair_id: int) -> pd.DataFrame:
+def load_events(data_root, pair_id):
     """Load the events TSV for a pair."""
     sub = f"sub-{pair_id:02d}"
     events_path = data_root / sub / "eeg" / f"{sub}_task-RPS_events.tsv"
     return pd.read_csv(events_path, sep="\t")
 
 
-def build_behaviour_matrices(events: pd.DataFrame) -> tuple[np.ndarray, np.ndarray]:
+def build_behaviour_matrices(events):
     """
-    Build behavioural data matrices for Player 1 and Player 2,
-    matching the MATLAB code's format:
+    Build behavioural matrices for Player 1 and Player 2.
 
-    For each player:
-      Column 0: this player's response (1=Rock, 2=Paper, 3=Scissors)
-      Column 1: other player's response
-      Column 2: outcome (1=draw, 2=this player wins, 3=other player wins)
-      Column 3: this player's previous response
-      Column 4: other player's previous response
+    Each matrix has one row per trial and the following columns:
+        0: player's response (1=Rock, 2=Paper, 3=Scissors)
+        1: opponent's response
+        2: outcome relative to the player
+           (1=draw, 2=player wins, 3=player loses)
+        3: player's response on the previous trial
+        4: opponent's response on the previous trial
+
+    Args:
+        events (pd.DataFrame): events table loaded from the dataset.
+
+    Returns:
+        tuple:
+            player1 (np.ndarray): behavioural matrix for player 1
+            player2 (np.ndarray): behavioural matrix for player 2
     """
     p1_resp = events["player1_resp"].values
     p2_resp = events["player2_resp"].values
@@ -462,21 +378,17 @@ def build_behaviour_matrices(events: pd.DataFrame) -> tuple[np.ndarray, np.ndarr
     return player1_behav, player2_behav
 
 
-def epoch_to_timebinned_array(epochs: mne.Epochs) -> tuple[np.ndarray, np.ndarray]:
+def epoch_to_timebinned_array(epochs):
     """
-    Split epochs into Decision/Response/Feedback phases, apply baseline
-    correction, and average into 250 ms time bins.
+    Convert epochs to 250 ms time bins for decision, response and feedback phases.
 
-    Mirrors the MATLAB code's phase-splitting + time-binning logic.
+    Args:
+        epochs (mne.Epochs): preprocessed EEG epochs
 
-    Parameters
-    ----------
-    epochs : MNE Epochs, tmin ~ -0.2005 s, tmax ~ 5.0 s, 256 Hz
-
-    Returns
-    -------
-    data : (n_trials, n_channels, 20) - time-binned data
-    time_labels : (20,) - right edge of each time bin (for reference)
+    Returns:
+        tuple:
+            data (np.ndarray): binned EEG data (n_trials, n_channels, 20)
+            time_labels (np.ndarray): time point for each bin
     """
     if not epochs.preload:
         epochs.load_data()
@@ -546,15 +458,16 @@ def epoch_to_timebinned_array(epochs: mne.Epochs) -> tuple[np.ndarray, np.ndarra
     return data, time_labels
 
 
-def remove_block_first_trials(
-    data: np.ndarray,
-    behav: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
+def remove_block_first_trials(data, behav):
     """
-    Remove the first trial of each block (since previous-trial info
-    is undefined there). Blocks are 40 trials each.
+    Remove the first trial of each block (previous-trial info undefined).
 
-    Mirrors the MATLAB code: rem_idx = 1:40:480
+    Args:
+        data (np.ndarray): EEG data
+        behav (np.ndarray): behavioural matrix
+
+    Returns:
+        tuple: filtered data and behaviour arrays
     """
     rem_idx = np.arange(0, NUM_TRIALS, TRIALS_PER_BLOCK)  # 0-indexed
     keep_mask = np.ones(NUM_TRIALS, dtype=bool)
@@ -563,14 +476,21 @@ def remove_block_first_trials(
     return data[keep_mask], behav[keep_mask]
 
 
-# ---------------------------------------------------------------------------
-# Main decoding pipeline
-# ---------------------------------------------------------------------------
+# --------------------
+# Main pipeline
+# --------------------
 
 def run_decoding() -> None:
     """
-    Main decoding loop, mirroring the MATLAB script.
-    Uses PATH_TO_DATA and PATH_TO_DERIVATIVES global constants.
+    Run the full decoding pipeline for all pairs and players.
+
+    Steps:
+        1. Load behavioural events
+        2. Load preprocessed EEG epochs
+        3. Convert epochs to time-binned features
+        4. Generate pseudo-trials
+        5. Run temporal decoding and channel searchlight
+        6. Save results to disk
     """
     PATH_TO_DERIVATIVES.mkdir(parents=True, exist_ok=True)
     path_to_lda_output = PATH_TO_DERIVATIVES / "lda"
@@ -581,7 +501,7 @@ def run_decoding() -> None:
     all_searchlight = {t: [] for t in range(4)}
 
     for p_idx, pair in enumerate(PAIR_IDS):
-        print(f"Loading pair {p_idx + 1} of {NUM_PAIRS} (pair ID {pair:02d})")
+        print(f"Loading pair {p_idx + 1} of {len(PAIR_IDS)} (pair ID {pair:02d})")
 
         # Load behavioural data
         events = load_events(PATH_TO_DATA, pair)
@@ -735,9 +655,9 @@ def run_decoding() -> None:
     print("Done.")
 
 
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
+# --------------------
+# Entry Point
+# --------------------
 
 if __name__ == "__main__":
     run_decoding()

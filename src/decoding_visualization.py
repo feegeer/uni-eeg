@@ -1,20 +1,16 @@
 """
-EEG LDA Decoding Visualization
-------------------------------
-Group-level visualization of time-resolved decoding accuracy
-for the Rock-Paper-Scissors EEG dataset.
+EEG LDA decoding visualization.
 
-Reads output from the Python LDA decoding pipeline (decoding.py),
-which saves results as .npz files.
+Plots group-level temporal decoding accuracy from the RPS EEG dataset.
+The script reads results produced by the decoding pipeline and generates
+a 2x2 figure showing accuracy over time for four decoding targets.
 
-Two loading modes:
-  1. Group file: group_decoding_results.npz (preferred, single file)
-  2. Per-player files: pair-XX_player-X_task-RPS_decoding.npz
+Input files:
+    - group_decoding_results.npz (preferred), or
+    - pair-XX_player-X_task-RPS_decoding.npz files.
 
-Main characteristics:
-  - Phase-segmented visualization (Decision / Response / Feedback)
-  - Phase-colored confidence bands (mean +/- SEM)
-  - Chance-level reference line (33.33%)
+The figure shows mean accuracy across participants with SEM confidence
+bands, separated into the Decision, Response and Feedback phases.
 """
 
 import pathlib
@@ -25,17 +21,17 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-# ==========================================================
-# CONFIGURATION
-# ==========================================================
+# --------------------
+# Configuration
+# --------------------
 
-DECODING_METHOD = "lda" # lda or eegnet
+DECODING_METHOD = "lda"  # "lda" or "eegnet"
 DATA_VERSION = "v2"
 
-# Path to derivatives directory containing decoding results
+# Directory containing decoding results
 RESULTS_DIR = pathlib.Path(f"src/ds006761") / DATA_VERSION / DECODING_METHOD
 
-# Chance level for 3-class decoding (Rock / Paper / Scissors)
+# Chance level for 3-class decoding
 CHANCE = 100 / 3
 
 # Phase definitions: name -> (start_s, end_s) in the 0-5 s epoch
@@ -52,7 +48,6 @@ PHASE_COLORS = {
     "Feedback": "#9013FE",  # purple
 }
 
-# Decode target indices -> labels and subplot titles
 TARGET_KEYS = [0, 1, 2, 3]
 TARGET_LABELS = ["self", "other", "self_prev", "other_prev"]
 TARGET_TITLES = {
@@ -62,22 +57,27 @@ TARGET_TITLES = {
     3: "(d) Opponent's previous response",
 }
 
-# Y-axis limits (percentage)
+# Y-axis limits
 Y_MIN, Y_MAX = 30, 40
 
 
-# ==========================================================
-# LOAD DECODING RESULTS
-# ==========================================================
+# --------------------
+# Load decoding results
+# --------------------
 
-def load_from_group_file(results_dir: pathlib.Path) -> tuple[dict, np.ndarray]:
+
+def load_from_group_file(results_dir):
     """
-    Load from the single group_decoding_results.npz file.
+    Load decoding results from the group summary file.
 
-    Returns
-    -------
-    all_scores : dict mapping target index -> (n_participants, n_timebins) array in [0, 1]
-    time_labels : (n_timebins,) array of time bin centres
+    Args:
+        results_dir (Path): directory containing decoding outputs.
+
+    Returns:
+        tuple:
+            all_scores (dict): target index -> accuracy array
+                of shape (n_participants, n_timebins)
+            time_labels (np.ndarray): right-edge timestamps of bins
     """
     group_path = results_dir / "group_decoding_results.npz"
     data = np.load(group_path, allow_pickle=True)
@@ -87,22 +87,26 @@ def load_from_group_file(results_dir: pathlib.Path) -> tuple[dict, np.ndarray]:
     for t in TARGET_KEYS:
         key = f"decoding_{t}"
         if key in data:
-            all_scores[t] = data[key]  # (n_participants, 20), values in [0, 1]
+            all_scores[t] = data[key]
 
     return all_scores, time_labels
 
 
-def load_from_per_player_files(results_dir: pathlib.Path) -> tuple[dict, np.ndarray]:
+def load_from_per_player_files(results_dir):
     """
-    Load from individual pair-XX_player-X_task-RPS_decoding.npz files.
+    Load decoding results from individual pair-player files.
 
-    Returns
-    -------
-    all_scores : dict mapping target index -> (n_participants, n_timebins) array in [0, 1]
-    time_labels : (n_timebins,) array of time bin centres
+    Args:
+        results_dir (Path): directory containing decoding outputs.
+
+    Returns:
+        tuple:
+            all_scores (dict): target index -> accuracy array
+            time_labels (np.ndarray): right-edge timestamps of bins
     """
     pattern = str(results_dir / "pair-*_player-*_task-RPS_decoding.npz")
     npz_files = sorted(glob.glob(pattern))
+
     print(f"Found {len(npz_files)} per-player result files.")
 
     all_scores = {t: [] for t in TARGET_KEYS}
@@ -120,7 +124,6 @@ def load_from_per_player_files(results_dir: pathlib.Path) -> tuple[dict, np.ndar
         except Exception as e:
             print(f"Skipping {fpath}: {e}")
 
-    # Stack into arrays
     for t in TARGET_KEYS:
         if all_scores[t]:
             all_scores[t] = np.vstack(all_scores[t])
@@ -130,7 +133,7 @@ def load_from_per_player_files(results_dir: pathlib.Path) -> tuple[dict, np.ndar
     return all_scores, time_labels
 
 
-def load_results(results_dir: pathlib.Path) -> tuple[dict, np.ndarray]:
+def load_results(results_dir):
     """Try group file first, fall back to per-player files."""
     group_path = results_dir / "group_decoding_results.npz"
     if group_path.exists():
@@ -141,32 +144,11 @@ def load_results(results_dir: pathlib.Path) -> tuple[dict, np.ndarray]:
         return load_from_per_player_files(results_dir)
 
 
-# ==========================================================
-# COMPUTE TIME BIN CENTRES
-# ==========================================================
+# --------------------
+# Visualization
+# --------------------
 
-def right_edges_to_centres(time_labels: np.ndarray) -> np.ndarray:
-    """
-    Convert right-edge time labels to bin centres.
-
-    The decoding script stores right edges of 250 ms bins:
-      [0.25, 0.50, ..., 2.00, 2.25, ..., 4.00, 4.25, ..., 5.00]
-
-    Bin centres are 125 ms earlier:
-      [0.125, 0.375, ..., 1.875, 2.125, ..., 3.875, 4.125, ..., 4.875]
-    """
-    return time_labels - 0.125
-
-
-# ==========================================================
-# VISUALIZATION
-# ==========================================================
-
-def plot_decoding_results(
-    all_scores: dict,
-    time_centres: np.ndarray,
-    output_path: pathlib.Path | None = None,
-) -> None:
+def plot_decoding_results(all_scores, time_centres, output_path):
     """
     Create a 2x2 figure of temporal decoding accuracy, matching the
     style of the paper's Figure 2.
@@ -268,9 +250,9 @@ def plot_decoding_results(
     plt.show()
 
 
-# ==========================================================
-# MAIN
-# ==========================================================
+# --------------------
+# Entry point
+# --------------------
 
 if __name__ == "__main__":
     all_scores, time_labels = load_results(RESULTS_DIR)
@@ -281,7 +263,8 @@ if __name__ == "__main__":
             "Run decoding.py first."
         )
 
-    time_centres = right_edges_to_centres(time_labels)
+    # Convert right-edge time labels to bin centres.
+    time_centres = time_labels - 0.125
 
     n_loaded = {
         TARGET_LABELS[t]: all_scores[t].shape[0]
