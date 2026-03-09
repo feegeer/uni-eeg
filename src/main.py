@@ -4,9 +4,8 @@ import dataset
 import eeg_visualization
 
 
-DATA_PATH = pathlib.Path("src/ds006761")
-DATASET_VERSION = "v2"
-PREPROCESSED_PATH = DATA_PATH / DATASET_VERSION / "preprocessed"
+DATA_PATH = pathlib.Path("data/ds006761")
+PREPROCESSED_PATH = pathlib.Path("data/results/preprocessed_eeg")
 
 def main():
     bids_dataset = dataset.BidsDataset.get_from(DATA_PATH, PREPROCESSED_PATH)
@@ -91,11 +90,9 @@ def verify_output(output_dir: pathlib.Path, pair_num: str = "01", player_num: in
 
 if __name__ == "__main__":
     main()
-    # Example usage (assuming your ds006761 folder is the root):
-    output_path = pathlib.Path("ds006761/derivatives")
 
     # Verify Player 1 (no bad channels specified in metadata)
-    verify_output(output_path, pair_num="01", player_num=1)
+    verify_output(PREPROCESSED_PATH, pair_num="01", player_num=1)
 
     # Verify Player 2 (bad channel T8 specified in metadata)
-    verify_output(output_path, pair_num="01", player_num=2)
+    verify_output(PREPROCESSED_PATH, pair_num="01", player_num=2)

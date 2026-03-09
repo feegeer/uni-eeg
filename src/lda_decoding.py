@@ -21,8 +21,9 @@ mne.set_log_level("WARNING")
 # Paths and constants
 # --------------------
 
-PATH_TO_DATA = pathlib.Path("src/ds006761")
-PATH_TO_DERIVATIVES = PATH_TO_DATA / "v2"
+PATH_TO_DATA = pathlib.Path("data/ds006761")
+PATH_TO_DERIVATIVES = pathlib.Path("data/results/preprocessed_eeg")
+PATH_TO_LDA = pathlib.Path("data/results/lda_decoding")
 
 PAIR_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
 
@@ -493,8 +494,7 @@ def run_decoding() -> None:
         6. Save results to disk
     """
     PATH_TO_DERIVATIVES.mkdir(parents=True, exist_ok=True)
-    path_to_lda_output = PATH_TO_DERIVATIVES / "lda"
-    path_to_lda_output.mkdir(parents=True, exist_ok=True)
+    PATH_TO_LDA.mkdir(parents=True, exist_ok=True)
 
     # We'll collect all results across pairs/players
     all_decoding = {t: [] for t in range(4)}       # 4 decode targets
@@ -518,7 +518,6 @@ def run_decoding() -> None:
             # Load preprocessed epochs
             fif_path = (
                 PATH_TO_DERIVATIVES
-                / "preprocessed"
                 / f"pair-{pair:02d}_player-{player_num}_task-RPS_eeg_epo.fif"
             )
             if not fif_path.exists():
@@ -619,7 +618,7 @@ def run_decoding() -> None:
             # Save per-player results
             # MATLAB: save(sprintf(...), 'decoding_accuracy', 'searchlight_acc')
             out_path = (
-                path_to_lda_output
+                PATH_TO_LDA
                 / f"pair-{pair:02d}_player-{player_num}_task-RPS_decoding.npz"
             )
             save_dict = {}
@@ -649,7 +648,7 @@ def run_decoding() -> None:
             )
 
     group_summary["time_labels"] = time_labels
-    group_path = path_to_lda_output / "group_decoding_results.npz"
+    group_path = PATH_TO_LDA / "group_decoding_results.npz"
     np.savez_compressed(group_path, **group_summary)
     print(f"Saved group results -> {group_path}")
     print("Done.")

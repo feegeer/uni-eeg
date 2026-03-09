@@ -25,11 +25,10 @@ import seaborn as sns
 # Configuration
 # --------------------
 
-DECODING_METHOD = "lda"  # "lda" or "eegnet"
-DATA_VERSION = "v2"
+DECODING_METHOD = "LDA"  # "LDA" or "EEGNet"
 
 # Directory containing decoding results
-RESULTS_DIR = pathlib.Path(f"src/ds006761") / DATA_VERSION / DECODING_METHOD
+RESULTS_DIR = pathlib.Path(f"data\\results\\{DECODING_METHOD.lower()}_decoding") 
 
 # Chance level for 3-class decoding
 CHANCE = 100 / 3
@@ -233,7 +232,7 @@ def plot_decoding_results(all_scores, time_centres, output_path):
     if all_scores and next(iter(all_scores.values())).shape[0] > 0:
         n = next(iter(all_scores.values())).shape[0]
         fig.suptitle(
-            f"{DECODING_METHOD.upper()} temporal decoding accuracy (N = {n})",
+            f"{DECODING_METHOD} temporal decoding accuracy (N = {n})",
             fontsize=16,
             fontweight="bold",
             y=1.02,
