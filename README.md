@@ -19,3 +19,17 @@ To format the code, run
 ```sh
 yapf -ir src
 ```
+
+## Folder Structure
+- data
+  - ds006761
+    - sub-01
+    - sub-02
+    - ...
+  - results
+    - preprocessed_eeg
+    - lda_decoding
+    - eegnet_decoding
+- src
+  - biosemi64.mat
+  - python and jupyter files
