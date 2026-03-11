@@ -27,7 +27,7 @@ yapf -ir src
     - sub-02
     - ...
   - results
-    - preprocessed_eeg
+    - preprocessed_eeg (.fif)
     - lda_decoding
     - eegnet_decoding
 - src
