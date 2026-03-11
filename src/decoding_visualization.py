@@ -20,57 +20,61 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-
 # --------------------
 # Configuration
 # --------------------
 
-DECODING_METHOD = "LDA"  # "LDA" or "EEGNet"
-
-# Directory containing decoding results
-RESULTS_DIR = pathlib.Path(f"data\\results\\{DECODING_METHOD.lower()}_decoding") 
+DECODING_METHODS_TO_FNAME = {
+  "LDA": "lda_cosmo",
+  "Shrinkage LDA": "shrinkage_lda",
+  "Linear SVM": "linear_svm",
+  "Logistic Regression": "logistic_reg"
+}
+RESULTS_DIR = pathlib.Path("data/results/multi_classifier_decoding")
+PLOTS_DIR = RESULTS_DIR / "plots"
+PLOTS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Chance level for 3-class decoding
 CHANCE = 100 / 3
 
 # Phase definitions: name -> (start_s, end_s) in the 0-5 s epoch
 PHASES = {
-    "Decision": (0, 2),
-    "Response": (2, 4),
-    "Feedback": (4, 5),
+  "Decision": (0, 2),
+  "Response": (2, 4),
+  "Feedback": (4, 5),
 }
 
 # Phase colours matching the paper's Figure 2
 PHASE_COLORS = {
-    "Decision": "#F5A623",  # orange
-    "Response": "#D0021B",  # red
-    "Feedback": "#9013FE",  # purple
+  "Decision": "#F5A623",  # orange
+  "Response": "#D0021B",  # red
+  "Feedback": "#9013FE",  # purple
 }
 
 TARGET_KEYS = [0, 1, 2, 3]
 TARGET_LABELS = ["self", "other", "self_prev", "other_prev"]
 TARGET_TITLES = {
-    0: "(a) Own response",
-    1: "(b) Opponent's response",
-    2: "(c) Own previous response",
-    3: "(d) Opponent's previous response",
+  0: "(a) Own response",
+  1: "(b) Opponent's response",
+  2: "(c) Own previous response",
+  3: "(d) Opponent's previous response",
 }
 
 # Y-axis limits
 Y_MIN, Y_MAX = 30, 40
-
 
 # --------------------
 # Load decoding results
 # --------------------
 
 
-def load_from_group_file(results_dir):
+def load_from_group_file(results_dir, decoding_method):
     """
     Load decoding results from the group summary file.
 
     Args:
         results_dir (Path): directory containing decoding outputs.
+        decoding_method (str): name of decoding method.
 
     Returns:
         tuple:
@@ -78,7 +82,7 @@ def load_from_group_file(results_dir):
                 of shape (n_participants, n_timebins)
             time_labels (np.ndarray): right-edge timestamps of bins
     """
-    group_path = results_dir / "group_decoding_results.npz"
+    group_path = results_dir / f"group_{DECODING_METHODS_TO_FNAME[decoding_method]}.npz"
     data = np.load(group_path, allow_pickle=True)
 
     time_labels = data["time_labels"]
@@ -91,19 +95,20 @@ def load_from_group_file(results_dir):
     return all_scores, time_labels
 
 
-def load_from_per_player_files(results_dir):
+def load_from_per_player_files(results_dir, decoding_method):
     """
     Load decoding results from individual pair-player files.
 
     Args:
         results_dir (Path): directory containing decoding outputs.
+        decoding_method (str): name of decoding method.
 
     Returns:
         tuple:
             all_scores (dict): target index -> accuracy array
             time_labels (np.ndarray): right-edge timestamps of bins
     """
-    pattern = str(results_dir / "pair-*_player-*_task-RPS_decoding.npz")
+    pattern = str(results_dir / f"pair-*_player-*_task-RPS_{DECODING_METHODS_TO_FNAME[decoding_method]}.npz")
     npz_files = sorted(glob.glob(pattern))
 
     print(f"Found {len(npz_files)} per-player result files.")
@@ -132,22 +137,23 @@ def load_from_per_player_files(results_dir):
     return all_scores, time_labels
 
 
-def load_results(results_dir):
+def load_results(results_dir, decoding_method):
     """Try group file first, fall back to per-player files."""
-    group_path = results_dir / "group_decoding_results.npz"
+    group_path = results_dir / f"group_{DECODING_METHODS_TO_FNAME[decoding_method]}.npz"
     if group_path.exists():
         print(f"Loading group file: {group_path}")
-        return load_from_group_file(results_dir)
+        return load_from_group_file(results_dir, decoding_method)
     else:
         print("Group file not found, loading per-player files...")
-        return load_from_per_player_files(results_dir)
+        return load_from_per_player_files(results_dir, decoding_method)
 
 
 # --------------------
 # Visualization
 # --------------------
 
-def plot_decoding_results(all_scores, time_centres, output_path):
+
+def plot_decoding_results(all_scores, time_centres, decoding_method, output_path):
     """
     Create a 2x2 figure of temporal decoding accuracy, matching the
     style of the paper's Figure 2.
@@ -179,52 +185,48 @@ def plot_decoding_results(all_scores, time_centres, output_path):
 
             # Confidence band
             ax.fill_between(
-                t_phase,
-                m_phase - s_phase,
-                m_phase + s_phase,
-                color=color,
-                alpha=0.2,
-                edgecolor="none",
+              t_phase,
+              m_phase - s_phase,
+              m_phase + s_phase,
+              color=color,
+              alpha=0.2,
+              edgecolor="none",
             )
 
             # Mean line with markers
             ax.plot(
-                t_phase,
-                m_phase,
-                color=color,
-                lw=2.5,
-                marker="o",
-                markersize=6,
-                markerfacecolor="white",
-                markeredgewidth=1.5,
+              t_phase,
+              m_phase,
+              color=color,
+              lw=2.5,
+              marker="o",
+              markersize=6,
+              markerfacecolor="white",
+              markeredgewidth=1.5,
             )
 
             # Phase label at top
             ax.text(
-                (t_start + t_end) / 2,
-                Y_MAX - (Y_MAX * 0.02),
-                phase_name,
-                ha="center",
-                va="top",
-                fontsize=11,
-                fontweight="bold",
-                color=color,
+              (t_start + t_end) / 2,
+              Y_MAX - (Y_MAX * 0.02),
+              phase_name,
+              ha="center",
+              va="top",
+              fontsize=11,
+              fontweight="bold",
+              color=color,
             )
 
         # Chance line
         ax.axhline(CHANCE, linestyle="--", color="#444444", lw=1.2, zorder=0)
 
         # Labels and formatting
-        ax.set_title(
-            TARGET_TITLES[t], loc="left", fontweight="bold", fontsize=14, pad=20
-        )
+        ax.set_title(TARGET_TITLES[t], loc="left", fontweight="bold", fontsize=14, pad=20)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.set_xlim(-0.1, 5.1)
         ax.set_ylabel("Decoding accuracy (%)", fontsize=12)
         ax.set_xlabel("Time (s)", fontsize=12)
-        ax.set_yticks(
-            np.arange(np.floor(Y_MIN / 5) * 5, np.ceil(Y_MAX / 5) * 5 + 5, 5)
-        )
+        ax.set_yticks(np.arange(np.floor(Y_MIN / 5) * 5, np.ceil(Y_MAX / 5) * 5 + 5, 5))
 
         sns.despine(ax=ax, offset=10, trim=True)
 
@@ -232,10 +234,10 @@ def plot_decoding_results(all_scores, time_centres, output_path):
     if all_scores and next(iter(all_scores.values())).shape[0] > 0:
         n = next(iter(all_scores.values())).shape[0]
         fig.suptitle(
-            f"{DECODING_METHOD} temporal decoding accuracy (N = {n})",
-            fontsize=16,
-            fontweight="bold",
-            y=1.02,
+          f"{decoding_method} temporal decoding accuracy (N = {n})",
+          fontsize=16,
+          fontweight="bold",
+          y=1.02,
         )
 
     plt.tight_layout()
@@ -246,31 +248,24 @@ def plot_decoding_results(all_scores, time_centres, output_path):
         plt.savefig(output_path, dpi=300, bbox_inches="tight")
         print(f"Figure saved to: {output_path}")
 
-    plt.show()
-
 
 # --------------------
 # Entry point
 # --------------------
 
 if __name__ == "__main__":
-    all_scores, time_labels = load_results(RESULTS_DIR)
+    for decoding_method in DECODING_METHODS_TO_FNAME:
+        all_scores, time_labels = load_results(RESULTS_DIR, decoding_method)
 
-    if time_labels is None:
-        raise FileNotFoundError(
-            f"No decoding results found in {RESULTS_DIR}. "
-            "Run decoding.py first."
-        )
+        if time_labels is None:
+            raise FileNotFoundError(f"No decoding results found in {RESULTS_DIR}. "
+                                    "Run decoding.py first.")
 
-    # Convert right-edge time labels to bin centres.
-    time_centres = time_labels - 0.125
+        # Convert right-edge time labels to bin centres.
+        time_centres = time_labels - 0.125
 
-    n_loaded = {
-        TARGET_LABELS[t]: all_scores[t].shape[0]
-        for t in TARGET_KEYS
-        if t in all_scores
-    }
-    print(f"Loaded participants per target: {n_loaded}")
+        n_loaded = {TARGET_LABELS[t]: all_scores[t].shape[0] for t in TARGET_KEYS if t in all_scores}
+        print(f"Loaded participants per target: {n_loaded}")
 
-    output_path = RESULTS_DIR / f"{DECODING_METHOD}_group_temporal_decoding.png"
-    plot_decoding_results(all_scores, time_centres, output_path)
+        output_path = PLOTS_DIR / f"group_{DECODING_METHODS_TO_FNAME[decoding_method]}.png"
+        plot_decoding_results(all_scores, time_centres, decoding_method, output_path)

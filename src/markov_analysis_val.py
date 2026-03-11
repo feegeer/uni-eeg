@@ -5,7 +5,6 @@ from pathlib import Path
 
 from markov_analysis_map import compute_markov_predictability
 
-
 # =====================================================
 # DATA PATH
 # =====================================================
@@ -51,7 +50,6 @@ chance = 1 / 3
 print("Total players:", len(all_participants))
 print("Grand mean predictability:", np.mean(group_mean))
 
-
 # =====================================================
 # PLOT (Paper Style)
 # =====================================================
@@ -60,30 +58,13 @@ plt.figure(figsize=(8, 5))
 
 # --- Individual participants (grey, transparent) ---
 for subj in all_participants:
-    plt.plot(
-        window_sizes,
-        subj,
-        color="grey",
-        alpha=0.2,
-        linewidth=1
-    )
+    plt.plot(window_sizes, subj, color="grey", alpha=0.2, linewidth=1)
 
 # --- Group mean (blue, bold) ---
-plt.plot(
-    window_sizes,
-    group_mean,
-    color="blue",
-    linewidth=3
-)
+plt.plot(window_sizes, group_mean, color="blue", linewidth=3)
 
 # --- SEM shading (light blue) ---
-plt.fill_between(
-    window_sizes,
-    group_mean - group_sem,
-    group_mean + group_sem,
-    color="blue",
-    alpha=0.15
-)
+plt.fill_between(window_sizes, group_mean - group_sem, group_mean + group_sem, color="blue", alpha=0.15)
 
 # --- Chance line ---
 plt.axhline(chance, linestyle="--", color="black", linewidth=1)

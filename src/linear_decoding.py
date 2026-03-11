@@ -20,8 +20,8 @@ from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.svm import LinearSVC
 from sklearn.linear_model import LogisticRegression
 
-mne.set_log_level("WARNING")
 
+mne.set_log_level("WARNING")
 
 # --------------------
 # Paths and constants
@@ -37,20 +37,16 @@ NUM_TRIALS = 480
 TRIALS_PER_BLOCK = 40
 
 # Parts A and B: 0–2 s in 250 ms bins (Decision + Response phases)
-TIME_WINDOWS_AB = np.column_stack(
-    [np.arange(0, 2.0, 0.25), np.arange(0.25, 2.25, 0.25)]
-)
+TIME_WINDOWS_AB = np.column_stack([np.arange(0, 2.0, 0.25), np.arange(0.25, 2.25, 0.25)])
 
 # Part C: 0–1 s in 250 ms bins (Feedback)
-TIME_WINDOWS_C = np.column_stack(
-    [np.arange(0, 1.0, 0.25), np.arange(0.25, 1.25, 0.25)]
-)
-
+TIME_WINDOWS_C = np.column_stack([np.arange(0, 1.0, 0.25), np.arange(0.25, 1.25, 0.25)])
 
 # --------------------
 # Classifier functions
 # --------------------
 # Each takes (train_data, train_labels, test_data) and returns predictions.
+
 
 def classify_lda_cosmo(train_data, train_labels, test_data):
     """
@@ -113,10 +109,10 @@ def classify_shrinkage_lda(train_data, train_labels, test_data):
 
 def classify_svm(train_data, train_labels, test_data):
     """
-    Linear SVM classifier.
+    Linear SVM classifier with feature standardisation.
 
-    Standard choice in EEG decoding literature alongside LDA.
-    Uses default C=1.0 regularisation.
+    SVM can be sensitive to feature scale. Z-scoring using training
+    statistics is standard practice in EEG decoding pipelines.
 
     Args:
         train_data (np.ndarray): training features (n_train, n_features)
@@ -126,17 +122,28 @@ def classify_svm(train_data, train_labels, test_data):
     Returns:
         np.ndarray: predicted class labels
     """
+    mean = train_data.mean(axis=0, keepdims=True)
+    std = train_data.std(axis=0, keepdims=True)
+    std[std == 0] = 1.0
+    train_scaled = (train_data - mean) / std
+    test_scaled = (test_data - mean) / std
+
     clf = LinearSVC(C=1.0, max_iter=10000, dual="auto")
-    clf.fit(train_data, train_labels)
-    return clf.predict(test_data)
+    clf.fit(train_scaled, train_labels)
+    return clf.predict(test_scaled)
 
 
 def classify_logreg(train_data, train_labels, test_data):
     """
-    L2-regularised multinomial logistic regression.
+    L2-regularised multinomial logistic regression with feature standardisation.
 
-    Trained with cross-entropy loss (same objective as neural networks)
-    but as a simple linear model.
+    Logistic regression is highly sensitive to feature scale — without
+    standardisation, channels with large voltage ranges dominate the
+    gradient and the optimiser effectively ignores smaller channels.
+    This causes the model to predict the majority class uniformly,
+    producing chance-level accuracy.
+
+    Z-scoring is fit on training data and applied to both train and test.
 
     Args:
         train_data (np.ndarray): training features (n_train, n_features)
@@ -146,17 +153,23 @@ def classify_logreg(train_data, train_labels, test_data):
     Returns:
         np.ndarray: predicted class labels
     """
+    mean = train_data.mean(axis=0, keepdims=True)
+    std = train_data.std(axis=0, keepdims=True)
+    std[std == 0] = 1.0
+    train_scaled = (train_data - mean) / std
+    test_scaled = (test_data - mean) / std
+
     clf = LogisticRegression(C=1.0, max_iter=10000, solver="lbfgs")
-    clf.fit(train_data, train_labels)
-    return clf.predict(test_data)
+    clf.fit(train_scaled, train_labels)
+    return clf.predict(test_scaled)
 
 
 # All classifiers: short_name -> (display_name, function)
 CLASSIFIERS = {
-    "lda_cosmo":      ("LDA (CoSMoMVPA)",             classify_lda_cosmo),
-    "shrinkage_lda":  ("Shrinkage LDA (Ledoit-Wolf)",  classify_shrinkage_lda),
-    "linear_svm":     ("Linear SVM",                   classify_svm),
-    "logistic_reg":   ("Logistic Regression",          classify_logreg),
+  "lda_cosmo": ("LDA (CoSMoMVPA)", classify_lda_cosmo),
+  "shrinkage_lda": ("Shrinkage LDA (Ledoit-Wolf)", classify_shrinkage_lda),
+  "linear_svm": ("Linear SVM", classify_svm),
+  "logistic_reg": ("Logistic Regression", classify_logreg),
 }
 
 
@@ -271,15 +284,16 @@ def cosmo_average_samples(data, targets, chunks, count=4, repeats=20, seed=1):
                 avg_chunks_list.append(chunk_val)
 
     return (
-        np.array(avg_data_list),
-        np.array(avg_targets_list),
-        np.array(avg_chunks_list),
+      np.array(avg_data_list),
+      np.array(avg_targets_list),
+      np.array(avg_chunks_list),
     )
 
 
 # --------------------
 # Cross-validation (generic)
 # --------------------
+
 
 def run_crossvalidation(data, targets, chunks, classify_fn, n_folds=10):
     """
@@ -296,9 +310,7 @@ def run_crossvalidation(data, targets, chunks, classify_fn, n_folds=10):
         float: classification accuracy
     """
     unique_chunks = np.unique(chunks)
-    assert len(unique_chunks) == n_folds, (
-        f"Expected {n_folds} unique chunks, got {len(unique_chunks)}"
-    )
+    assert len(unique_chunks) == n_folds, (f"Expected {n_folds} unique chunks, got {len(unique_chunks)}")
 
     correct = 0
     total = 0
@@ -308,8 +320,9 @@ def run_crossvalidation(data, targets, chunks, classify_fn, n_folds=10):
         train_mask = ~test_mask
 
         preds = classify_fn(
-            data[train_mask], targets[train_mask],
-            data[test_mask],
+          data[train_mask],
+          targets[train_mask],
+          data[test_mask],
         )
         correct += np.sum(preds == targets[test_mask])
         total += test_mask.sum()
@@ -317,8 +330,7 @@ def run_crossvalidation(data, targets, chunks, classify_fn, n_folds=10):
     return correct / total
 
 
-def run_searchlight_channel(data, targets, chunks, ch_names, dist_matrix,
-                            classify_fn, n_neighbours=4, n_folds=10):
+def run_searchlight_channel(data, targets, chunks, ch_names, dist_matrix, classify_fn, n_neighbours=4, n_folds=10):
     """
     Channel searchlight decoding using nearest neighbours.
 
@@ -351,8 +363,11 @@ def run_searchlight_channel(data, targets, chunks, ch_names, dist_matrix,
         for t in range(n_timebins):
             features = data[:, all_idx, t]
             sl_acc[c_idx, t] = run_crossvalidation(
-                features, targets, chunks,
-                classify_fn=classify_fn, n_folds=n_folds,
+              features,
+              targets,
+              chunks,
+              classify_fn=classify_fn,
+              n_folds=n_folds,
             )
 
     return sl_acc
@@ -372,15 +387,14 @@ def compute_channel_distance_matrix(ch_names, montage):
     pos = montage.get_positions()
     ch_pos = pos["ch_pos"]
     coords = np.array([ch_pos[ch] for ch in ch_names])
-    dist_matrix = np.linalg.norm(
-        coords[:, None, :] - coords[None, :, :], axis=2
-    )
+    dist_matrix = np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
     return dist_matrix
 
 
 # --------------------
 # Data helpers
 # --------------------
+
 
 def load_events(data_root, pair_id):
     """Load the events TSV for a pair."""
@@ -418,9 +432,7 @@ def build_behaviour_matrices(events):
     # Player 1: self=p1, other=p2, outcome as-is
     p1_prev_self = np.concatenate([[np.nan], p1_resp[:-1]])
     p1_prev_other = np.concatenate([[np.nan], p2_resp[:-1]])
-    player1_behav = np.column_stack([
-        p1_resp, p2_resp, outcome, p1_prev_self, p1_prev_other
-    ])
+    player1_behav = np.column_stack([p1_resp, p2_resp, outcome, p1_prev_self, p1_prev_other])
 
     # Player 2: self=p2, other=p1, outcome recoded relative to p2
     p2_outcome = np.zeros(n, dtype=float)
@@ -430,9 +442,7 @@ def build_behaviour_matrices(events):
 
     p2_prev_self = np.concatenate([[np.nan], p2_resp[:-1]])
     p2_prev_other = np.concatenate([[np.nan], p1_resp[:-1]])
-    player2_behav = np.column_stack([
-        p2_resp, p1_resp, p2_outcome, p2_prev_self, p2_prev_other
-    ])
+    player2_behav = np.column_stack([p2_resp, p1_resp, p2_outcome, p2_prev_self, p2_prev_other])
 
     return player1_behav, player2_behav
 
@@ -500,18 +510,18 @@ def epoch_to_timebinned_array(epochs):
                 binned[:, :, w] = data_part[:, :, t_mask].mean(axis=2)
         return binned
 
-    binned_a = bin_data(data_a, times_a, TIME_WINDOWS_AB)           # Decision
-    binned_b = bin_data(data_b, times_b_shifted, TIME_WINDOWS_AB)   # Response
-    binned_c = bin_data(data_c, times_c_shifted, TIME_WINDOWS_C)    # Feedback
+    binned_a = bin_data(data_a, times_a, TIME_WINDOWS_AB)  # Decision
+    binned_b = bin_data(data_b, times_b_shifted, TIME_WINDOWS_AB)  # Response
+    binned_c = bin_data(data_c, times_c_shifted, TIME_WINDOWS_C)  # Feedback
 
     # Concatenate: 8 + 8 + 4 = 20 time bins
     data = np.concatenate([binned_a, binned_b, binned_c], axis=2)
 
     # Time labels (right edges, matching MATLAB)
     time_labels = np.concatenate([
-        TIME_WINDOWS_AB[:, 1],           # Decision: 0.25, 0.50, ..., 2.00
-        TIME_WINDOWS_AB[:, 1] + 2.0,     # Response: 2.25, 2.50, ..., 4.00
-        TIME_WINDOWS_C[:, 1] + 4.0,      # Feedback: 4.25, 4.50, ..., 5.00
+      TIME_WINDOWS_AB[:, 1],  # Decision: 0.25, 0.50, ..., 2.00
+      TIME_WINDOWS_AB[:, 1] + 2.0,  # Response: 2.25, 2.50, ..., 4.00
+      TIME_WINDOWS_C[:, 1] + 4.0,  # Feedback: 4.25, 4.50, ..., 5.00
     ])
 
     return data, time_labels
@@ -539,6 +549,7 @@ def remove_block_first_trials(data, behav):
 # Main pipeline
 # --------------------
 
+
 def run_decoding() -> None:
     """
     Run the full decoding pipeline for all pairs, players, and classifiers.
@@ -551,14 +562,8 @@ def run_decoding() -> None:
     PATH_TO_RESULTS.mkdir(parents=True, exist_ok=True)
 
     # Storage: clf_key -> target_idx -> list of results
-    all_decoding = {
-        clf_key: {t: [] for t in range(4)}
-        for clf_key in CLASSIFIERS
-    }
-    all_searchlight = {
-        clf_key: {t: [] for t in range(4)}
-        for clf_key in CLASSIFIERS
-    }
+    all_decoding = {clf_key: {t: [] for t in range(4)} for clf_key in CLASSIFIERS}
+    all_searchlight = {clf_key: {t: [] for t in range(4)} for clf_key in CLASSIFIERS}
 
     time_labels = None
 
@@ -578,10 +583,7 @@ def run_decoding() -> None:
             print(f"  Player {player_num}")
 
             # Load preprocessed epochs
-            fif_path = (
-                PATH_TO_DERIVATIVES
-                / f"pair-{pair:02d}_player-{player_num}_task-RPS_eeg_epo.fif"
-            )
+            fif_path = (PATH_TO_DERIVATIVES / f"pair-{pair:02d}_player-{player_num}_task-RPS_eeg_epo.fif")
             if not fif_path.exists():
                 print(f"    Skipping: {fif_path.name} not found")
                 continue
@@ -602,9 +604,7 @@ def run_decoding() -> None:
             eeg_data, behav = remove_block_first_trials(eeg_data, behav)
 
             # Compute channel distance matrix for searchlight
-            dist_matrix = compute_channel_distance_matrix(
-                ch_names, epochs.get_montage()
-            )
+            dist_matrix = compute_channel_distance_matrix(ch_names, epochs.get_montage())
 
             # --- Loop over decode targets ---
             # 0 = own response (current), 1 = other's response (current)
@@ -626,8 +626,12 @@ def run_decoding() -> None:
 
                 # Average samples: 4 trials averaged, 20 repeats
                 avg_data, avg_targets, avg_chunks = cosmo_average_samples(
-                    ds_data, ds_targets, chunks,
-                    count=4, repeats=20, seed=1,
+                  ds_data,
+                  ds_targets,
+                  chunks,
+                  count=4,
+                  repeats=20,
+                  seed=1,
                 )
 
                 n_timebins = avg_data.shape[2]
@@ -638,49 +642,49 @@ def run_decoding() -> None:
                     # Temporal decoding (all channels, per time bin)
                     temp_acc = np.zeros(n_timebins)
                     for t in range(n_timebins):
-                        features = avg_data[:, :, t]  # (n_pseudo, n_channels)
+                        features = avg_data[:, :, t]
                         temp_acc[t] = run_crossvalidation(
-                            features, avg_targets, avg_chunks,
-                            classify_fn=clf_fn, n_folds=10,
+                          features,
+                          avg_targets,
+                          avg_chunks,
+                          classify_fn=clf_fn,
+                          n_folds=10,
                         )
 
-                    print(
-                        f"    {target_names[test_idx]:>10s} | "
-                        f"{clf_display:<30s} | "
-                        f"mean acc = {temp_acc.mean() * 100:.1f}%"
-                    )
+                    print(f"    {target_names[test_idx]:>10s} | "
+                          f"{clf_display:<30s} | "
+                          f"mean acc = {temp_acc.mean() * 100:.1f}%")
 
                     # Store temporal decoding result
                     all_decoding[clf_key][test_idx].append({
-                        "pair": pair,
-                        "player": player_num,
-                        "accuracy": temp_acc,  # (20,)
-                        "time_labels": time_labels,
+                      "pair": pair,
+                      "player": player_num,
+                      "accuracy": temp_acc,
+                      "time_labels": time_labels,
                     })
 
-                    # Channel searchlight
                     sl_acc = run_searchlight_channel(
-                        avg_data, avg_targets, avg_chunks,
-                        ch_names, dist_matrix,
-                        classify_fn=clf_fn,
-                        n_neighbours=4,  # matching MATLAB 'count', 4
-                        n_folds=10,
+                      avg_data,
+                      avg_targets,
+                      avg_chunks,
+                      ch_names,
+                      dist_matrix,
+                      classify_fn=clf_fn,
+                      n_neighbours=4,
+                      n_folds=10,
                     )
 
                     all_searchlight[clf_key][test_idx].append({
-                        "pair": pair,
-                        "player": player_num,
-                        "accuracy": sl_acc,  # (n_channels, 20)
-                        "ch_names": ch_names,
-                        "time_labels": time_labels,
+                      "pair": pair,
+                      "player": player_num,
+                      "accuracy": sl_acc,
+                      "ch_names": ch_names,
+                      "time_labels": time_labels,
                     })
 
             # Save per-player results for each classifier
             for clf_key in CLASSIFIERS:
-                out_path = (
-                    PATH_TO_RESULTS
-                    / f"pair-{pair:02d}_player-{player_num}_task-RPS_{clf_key}.npz"
-                )
+                out_path = (PATH_TO_RESULTS / f"pair-{pair:02d}_player-{player_num}_task-RPS_{clf_key}.npz")
                 save_dict = {}
                 for t in range(4):
                     save_dict[f"decoding_acc_{t}"] = all_decoding[clf_key][t][-1]["accuracy"]
@@ -699,15 +703,9 @@ def run_decoding() -> None:
         group_summary = {}
         for t in range(4):
             if all_decoding[clf_key][t]:
-                group_summary[f"decoding_{t}"] = np.stack(
-                    [d["accuracy"] for d in all_decoding[clf_key][t]]
-                )
-                group_summary[f"decoding_{t}_pairs"] = np.array(
-                    [d["pair"] for d in all_decoding[clf_key][t]]
-                )
-                group_summary[f"decoding_{t}_players"] = np.array(
-                    [d["player"] for d in all_decoding[clf_key][t]]
-                )
+                group_summary[f"decoding_{t}"] = np.stack([d["accuracy"] for d in all_decoding[clf_key][t]])
+                group_summary[f"decoding_{t}_pairs"] = np.array([d["pair"] for d in all_decoding[clf_key][t]])
+                group_summary[f"decoding_{t}_players"] = np.array([d["player"] for d in all_decoding[clf_key][t]])
 
         group_summary["time_labels"] = time_labels
         group_path = PATH_TO_RESULTS / f"group_{clf_key}.npz"

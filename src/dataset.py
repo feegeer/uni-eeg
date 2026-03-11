@@ -26,7 +26,6 @@ BIOSEMI_ORDERED_CODES = [
 # Get the standard 10-20 names from MNE's built-in montage (64 channels)
 montage_1020_ref = mne.channels.make_standard_montage('biosemi64')
 TEN_TWENTY_LABELS = montage_1020_ref.ch_names[:64]
-BIOSEMI_CODE_TO_1020_LABEL = dict(zip(BIOSEMI_ORDERED_CODES, TEN_TWENTY_LABELS))
 
 # 1. Load the 3D Coordinates from the .mat file
 try:

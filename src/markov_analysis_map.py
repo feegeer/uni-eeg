@@ -4,9 +4,9 @@ from pathlib import Path
 
 
 def compute_markov_predictability(
-    responses: np.ndarray,
-    num_trials: int = 480,
-    window_sizes=range(5, 101),
+  responses: np.ndarray,
+  num_trials: int = 480,
+  window_sizes=range(5, 101),
 ):
     """
     Compute first-order Markov Chain based or a single participant.
@@ -15,7 +15,7 @@ def compute_markov_predictability(
 
     prob_data = np.full((num_trials, 13), np.nan)
 
-    # Initial values 
+    # Initial values
     prob_data[0, :] = [1, 3, 1, 1, 1, 3, 1, 1, 1, 3, 1, 1, 1]
 
     for i in range(1, num_trials):
@@ -37,8 +37,6 @@ def compute_markov_predictability(
             prob_data[i, 9] += 1
             prob_data[i, 10 + (curr_resp - 1)] += 1
 
-
-
     mean_accuracy = np.zeros(len(window_sizes))
     predictions = np.full((len(window_sizes), num_trials, 4), np.nan)
 
@@ -47,9 +45,8 @@ def compute_markov_predictability(
         m_prob = np.full((3, 3), 1 / 3)
         prob_res = np.full((num_trials, 4), np.nan)
 
-        for i in range(2, num_trials):  
+        for i in range(2, num_trials):
 
-            
             if i < window_size + 1:
                 inter = prob_data[i - 1, :]
             else:
@@ -77,7 +74,7 @@ def compute_markov_predictability(
 
             prob_res[i, 0] = responses[i]
 
-            #  Missing response 
+            #  Missing response
             if responses[i - 1] > 0:
                 idx = i
             elif responses[i - 2] > 0:
@@ -94,7 +91,6 @@ def compute_markov_predictability(
                 prob_res[i, 1] = pred_move + 1
                 prob_res[i, 2] = probs[pred_move]
 
-            
             if np.isnan(prob_res[i, 2]):
                 prob_res[i, 3] = np.nan
             elif prob_res[i, 0] == prob_res[i, 1]:
@@ -112,8 +108,8 @@ def compute_markov_predictability(
     return mean_accuracy, predictions
 
 
-
 # Run on full data
+
 
 def run_markov_analysis(data_path: Path):
 
@@ -128,28 +124,21 @@ def run_markov_analysis(data_path: Path):
     for p, pair in enumerate(pair_ids):
         print(f"Loading pair {p + 1} of {num_pairs}")
 
-        events_path = (
-            data_path
-            / f"sub-{pair:02d}"
-            / "eeg"
-            / f"sub-{pair:02d}_task-RPS_events.tsv"
-        )
+        events_path = (data_path / f"sub-{pair:02d}" / "eeg" / f"sub-{pair:02d}_task-RPS_events.tsv")
 
         events = pd.read_csv(events_path, sep="\t")
 
-        responses = np.column_stack(
-            [
-                events["player1_resp"].to_numpy(),
-                events["player2_resp"].to_numpy(),
-            ]
-        )
+        responses = np.column_stack([
+          events["player1_resp"].to_numpy(),
+          events["player2_resp"].to_numpy(),
+        ])
 
         for ppt in range(2):
 
             mean_acc, pred = compute_markov_predictability(
-                responses[:, ppt],
-                num_trials=num_trials,
-                window_sizes=window_sizes,
+              responses[:, ppt],
+              num_trials=num_trials,
+              window_sizes=window_sizes,
             )
 
             Mean_Accuracy[p, ppt, :] = mean_acc
@@ -159,9 +148,9 @@ def run_markov_analysis(data_path: Path):
     out_path.mkdir(exist_ok=True)
 
     np.savez(
-        out_path / "markov_chain_pred.npz",
-        Mean_Accuracy=Mean_Accuracy,
-        M_pred=M_pred,
+      out_path / "markov_chain_pred.npz",
+      Mean_Accuracy=Mean_Accuracy,
+      M_pred=M_pred,
     )
 
 
