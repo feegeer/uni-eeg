@@ -382,19 +382,19 @@ def baseline_correct(data: np.ndarray, times: np.ndarray) -> np.ndarray:
         bl_mean = data[:, :, bl_mask].mean(axis=2, keepdims=True)
         return data - bl_mean
     return data
- 
- 
+
+
 def bin_data(data: np.ndarray, times: np.ndarray, windows: np.ndarray) -> np.ndarray:
     """Average EEG data into time bins defined by windows (strict inequalities)."""
     n_trials, n_channels, _ = data.shape
     n_bins = windows.shape[0]
     binned = np.zeros((n_trials, n_channels, n_bins))
- 
+
     for w in range(n_bins):
         t_mask = (times > windows[w, 0]) & (times < windows[w, 1])
         if t_mask.sum() > 0:
             binned[:, :, w] = data[:, :, t_mask].mean(axis=2)
- 
+
     return binned
 
 
@@ -419,7 +419,7 @@ def epoch_to_timebinned_array(epochs: mne.Epochs) -> tuple[np.ndarray, np.ndarra
     mask_a = (times >= -0.2) & (times <= 2.0)
     mask_b = (times >= 1.8) & (times <= 4.0)
     mask_c = (times >= 3.8) & (times <= 5.0)
- 
+
     data_a = baseline_correct(full_data[:, :, mask_a], times[mask_a])
     data_b = baseline_correct(full_data[:, :, mask_b], times[mask_b] - 2.0)
     data_c = baseline_correct(full_data[:, :, mask_c], times[mask_c] - 4.0)
@@ -473,7 +473,8 @@ def save_group_level(all_decoding: dict, time_labels: np.ndarray) -> None:
         print(f"  {clf_display} -> {group_path.name}")
 
 
-def save_per_player_level(all_decoding: dict, all_searchlight: dict, time_labels: np.ndarray, ch_names: list[str], pair: int, player_num: int) -> None:
+def save_per_player_level(all_decoding: dict, all_searchlight: dict, time_labels: np.ndarray, ch_names: list[str],
+                          pair: int, player_num: int) -> None:
     for clf_key in CLASSIFIERS:
         out_path = (PATH_TO_RESULTS / f"pair-{pair:02d}_player-{player_num}_task-RPS_{clf_key}.npz")
         save_dict = {}
