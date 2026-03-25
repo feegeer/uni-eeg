@@ -42,7 +42,8 @@ def data_structure_setup() -> None:
     PREPROCESSED_DIR.mkdir(exist_ok=True)
     LINEAR_DECODING_DIR.mkdir(exist_ok=True)
     NON_LINEAR_DIR.mkdir(exist_ok=True)
-
+    MARKOV_DIR.mkdir(exist_ok=True)
+    
     # 3. biosemi64.mat
     if not BIOSEMI_PATH.exists():
         print(f"{BIOSEMI_PATH} does not exist.")
