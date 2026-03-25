@@ -22,14 +22,21 @@ yapf -ir src
 
 ## Folder Structure
 - data
-  - ds006761
-    - sub-01
-    - sub-02
-    - ...
+  - ds006761 (following original dataset folder structure)
   - results
     - preprocessed_eeg (.fif)
-    - lda_decoding
-    - eegnet_decoding
-- src
+    - linear_decoding
+    - non_linear_decoding
   - biosemi64.mat
-  - python and jupyter files
+  - biosemi64.lay
+- src
+  - dataset.py (reading dataset and metadata + preprocessing + data classes for stats plot)
+  - visualization.py (move all plot functions here)
+  - linear_decoding.py (detached - only uses .fif files)
+  - non_linear_decoding.py (detached - only uses .fif files)
+  - markov_analysis.py
+  - data_structure_setup.py
+  - main.py (import modules and call the main functions from each step in the pipeline - comment out/back steps depending on what you want)
+- report
+  - images
+  - main_report.ipynb

@@ -3,6 +3,7 @@ from collections.abc import Mapping
 import csv
 import dataclasses
 import enum
+from functools import lru_cache
 import gc
 import math
 import pathlib
@@ -13,7 +14,7 @@ import mne_bids
 import numpy as np
 import scipy.io
 
-# --- Global Constants & Setup (Mimicking FieldTrip Layout/Geometry Loading) ---
+# --- Global Constants ---
 # The standard BioSemi codes in order (A1-A32 then B1-B32) corresponding
 # to the channel sequence used by FieldTrip's biosemi64.lay template.
 BIOSEMI_ORDERED_CODES = [
@@ -23,32 +24,59 @@ BIOSEMI_ORDERED_CODES = [
   'B21', 'B22', 'B23', 'B24', 'B25', 'B26', 'B27', 'B28', 'B29', 'B30', 'B31', 'B32'
 ]
 
-# Get the standard 10-20 names from MNE's built-in montage (64 channels)
-montage_1020_ref = mne.channels.make_standard_montage('biosemi64')
-TEN_TWENTY_LABELS = montage_1020_ref.ch_names[:64]
 
-# 1. Load the 3D Coordinates from the .mat file
-try:
-    mat_contents = scipy.io.loadmat("src/biosemi64.mat")
-    # Biosemi64.mat coordinates are in a unit circle.abs
-    # The average adult's head radius is around 9cm.
-    biosemi_coords_3d = mat_contents['biosemi64'] * 0.09
-except FileNotFoundError:
-    print("FATAL ERROR: biosemi64.mat not found. Please update the file path in the script.")
-    raise
+def _biosemi64_mat_path() -> pathlib.Path:
+    """Absolute path to the bundled BioSemi 3D coordinates matrix."""
+    return pathlib.Path(__file__).resolve().parent / "biosemi64.mat"
 
-ch_pos_dict_3d = dict(zip(TEN_TWENTY_LABELS, biosemi_coords_3d))
-FULL_MNE_BIOSEMI_MONTAGE = mne.channels.make_dig_montage(ch_pos=ch_pos_dict_3d, coord_frame='head')
 
-BIOSEMI_DISTANCE_MATRIX = np.linalg.norm(biosemi_coords_3d[:, None, :] - biosemi_coords_3d[None, :, :], axis=2)
+@lru_cache(maxsize=1)
+def ten_twenty_labels() -> list[str]:
+    """Return the BioSemi64 channel names in MNE's built-in 10-20 montage order."""
+    montage = mne.channels.make_standard_montage("biosemi64")
+    return montage.ch_names[:64]
 
-FIELDTRIP_NEIGHBORS = {}
-for i, ch in enumerate(TEN_TWENTY_LABELS):
-    neighbor_index = [
-        j for j in range(len(TEN_TWENTY_LABELS))
-        if j != i and BIOSEMI_DISTANCE_MATRIX[i, j] < 0.5
-    ]
-    FIELDTRIP_NEIGHBORS[ch] = [TEN_TWENTY_LABELS[j] for j in neighbor_index]
+
+@lru_cache(maxsize=1)
+def biosemi_coords_3d() -> np.ndarray:
+    """Load BioSemi64 3D coordinates from the local `.mat` file."""
+    mat_path = _biosemi64_mat_path()
+    if not mat_path.exists():
+        raise FileNotFoundError(
+            f"biosemi64.mat not found at {mat_path}. ")
+    mat_contents = scipy.io.loadmat(str(mat_path))
+    return mat_contents["biosemi64"]
+
+
+@lru_cache(maxsize=1)
+def full_mne_biosemi_montage() -> mne.channels.DigMontage:
+    """Create an MNE DigMontage for the BioSemi64 3D coordinates."""
+    labels = ten_twenty_labels()
+    coords = biosemi_coords_3d()
+    ch_pos = dict(zip(labels, coords))
+    return mne.channels.make_dig_montage(ch_pos=ch_pos, coord_frame="head")
+
+
+@lru_cache(maxsize=1)
+def biosemi_distance_matrix() -> np.ndarray:
+    """Pairwise Euclidean distances between BioSemi64 channels."""
+    coords = biosemi_coords_3d()
+    return np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
+
+
+@lru_cache(maxsize=1)
+def fieldtrip_neighbors() -> dict[str, list[str]]:
+    """Neighbour definition approximating FieldTrip's BioSemi64 template."""
+    labels = ten_twenty_labels()
+    dist = biosemi_distance_matrix()
+    neighbors: dict[str, list[str]] = {}
+    for i, ch in enumerate(labels):
+        neighbor_index = [
+            j for j in range(len(labels))
+            if j != i and dist[i, j] < 0.5
+        ]
+        neighbors[ch] = [labels[j] for j in neighbor_index]
+    return neighbors
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -216,6 +244,45 @@ class Subject:
         """The main preprocessing pipeline, mirroring the structure of the MATLAB loop."""
         print(f"Processing {self.id}...")
         # 1. Load Data (FieldTrip's ft_read_header + ft_preprocessing)
+        raw = self.read_raw_eeg_data(bids_root)
+
+        # 2. Split and Rename Channels (MATLAB's channel selection + renaming via .lay file)
+        raw_p1, raw_p2 = self.prepare_players(raw)
+
+        # 3. Clean up the massive original Raw object immediately to free RAM
+        del raw
+        gc.collect()
+
+        # raw_p1.filter(l_freq=0.5, h_freq=40.0)
+        # raw_p2.filter(l_freq=0.5, h_freq=40.0)
+
+        # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
+        epochs_p1 = self.epoch_players(raw_p1)
+        epochs_p2 = self.epoch_players(raw_p2)
+
+        del raw_p1, raw_p2
+        gc.collect()
+
+        # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair equivalent)
+        self.interpolate(epochs_p1, self.player1, "Player 1")
+        self.interpolate(epochs_p2, self.player2, "Player 2")
+
+        if not epochs_p1.preload:
+            epochs_p1.load_data()
+        epochs_p1.resample(512, verbose=False)
+
+        if not epochs_p2.preload:
+            epochs_p2.load_data()
+        epochs_p2.resample(512, verbose=False)
+
+        # 7. Save (MATLAB's save function)
+        self.save(epochs_p1, epochs_p2, output_dir)
+
+        del epochs_p1, epochs_p2
+        gc.collect()
+        print(f"  Done {self.id}. Memory cleared.\n")
+
+    def read_raw_eeg_data(self, bids_root: pathlib.Path) -> mne.io.Raw:
         bids_path = mne_bids.BIDSPath(subject=self.id.replace("sub-", ""), task="RPS", root=bids_root)
         try:
             raw = mne_bids.read_raw_bids(bids_path, verbose=False)
@@ -223,42 +290,15 @@ class Subject:
         except FileNotFoundError:
             print(f"  Skipping {self.id}: BIDS file not found.")
             return
+        return raw
 
-        # 2. Split and Rename Channels (MATLAB's channel selection + renaming via .lay file)
-        raw_p1, raw_p2 = self._prepare_players(raw)
+    def prepare_players(self, raw: mne.io.Raw) -> tuple[mne.io.Raw, mne.io.Raw]:
+        player_raws = []
 
-        # 3. Clean up the massive original Raw object immediately to free RAM
-        del raw
-        gc.collect()
+        labels_1020 = ten_twenty_labels()
+        montage = full_mne_biosemi_montage()
 
-        # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
-        epochs_p1 = self._create_epochs(raw_p1)
-        epochs_p2 = self._create_epochs(raw_p2)
-
-        del raw_p1, raw_p2
-        gc.collect()
-
-        # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair equivalent)
-        self._interpolate(epochs_p1, self.player1, "Player 1")
-        self._interpolate(epochs_p2, self.player2, "Player 2")
-
-        if not epochs_p1.preload:
-            epochs_p1.load_data()
-        epochs_p1.resample(256, verbose=False)
-
-        if not epochs_p2.preload:
-            epochs_p2.load_data()
-        epochs_p2.resample(256, verbose=False)
-
-        # 7. Save (MATLAB's save function)
-        self._save(epochs_p1, epochs_p2, output_dir)
-
-        del epochs_p1, epochs_p2
-        gc.collect()
-        print(f"  Done {self.id}. Memory cleared.\n")
-
-    def _prepare_players(self, raw):
-        def prepare_one_player(raw, player_prefix):
+        for player_prefix in ["2-", "1-"]:
             expected_chs = [f"{player_prefix}{code}" for code in BIOSEMI_ORDERED_CODES]
 
             missing = [ch for ch in expected_chs if ch not in raw.ch_names]
@@ -266,27 +306,31 @@ class Subject:
                 raise ValueError(f"Missing expected EEG channels for {player_prefix}: {missing}")
 
             player_raw = raw.copy().pick(expected_chs)
-            rename_map = dict(zip(expected_chs, TEN_TWENTY_LABELS))
+            rename_map = dict(zip(expected_chs, labels_1020))
             player_raw.rename_channels(rename_map)
 
             player_raw.set_channel_types({ch: "eeg" for ch in player_raw.ch_names}, verbose=False)
-            player_raw.set_montage(FULL_MNE_BIOSEMI_MONTAGE, match_case=False, verbose=False)
+            player_raw.set_montage(montage, match_case=False, verbose=False)
+            player_raws.append(player_raw)
+        return player_raws[0], player_raws[1]
 
-            return player_raw
 
-        raw_p1 = prepare_one_player(raw, "2-")
-        raw_p2 = prepare_one_player(raw, "1-")
-        return raw_p1, raw_p2
+    def epoch_players(self, raw, sample_frequency: int = 2048):
+        onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
 
-    # def _interpolate(self, instance, player_meta, label):
-    #     """Handles bad channel interpolation (MATLAB's ft_channelrepair)."""
-    #     bads = [ch for ch in player_meta.preprocessing_channels_fixed if ch in instance.ch_names]
-    #     if bads:
-    #         instance.info['bads'] = bads
-    #         instance.interpolate_bads(reset_bads=True, verbose=False)
-    #         print(f"  {label}: Interpolated {bads}")
+        prestim_samp = math.ceil(0.2 * sample_frequency) # 410
+        poststim_samp = math.ceil(5.0 * sample_frequency) # 10240
 
-    def _interpolate(self, epochs, player_meta, label):
+        # each row is [sample ID, dummy value for previous value, event ID (all events are of the same type, so dummy value 1 is ok here)]
+        events = np.column_stack([onset_samples, np.zeros(len(onset_samples), dtype=int), np.ones(len(onset_samples), dtype=int)])
+
+        tmin = - prestim_samp / sample_frequency
+        tmax = poststim_samp / sample_frequency
+
+        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None)
+        return epochs
+
+    def interpolate(self, epochs, player_meta, label):
         """
         Closer match to FieldTrip ft_channelrepair(method='weighted'):
 
@@ -311,6 +355,9 @@ class Subject:
         n_channels = len(ch_names)
         repair = np.eye(n_channels, dtype=float)
 
+        neighbors = fieldtrip_neighbors()
+        dist_matrix = biosemi_distance_matrix()
+
         unable = []
 
         for bad_ch in bads:
@@ -318,7 +365,7 @@ class Subject:
 
             # FieldTrip starts from the neighbour definition and removes bad channels
             good_neighs = [
-                ch for ch in FIELDTRIP_NEIGHBORS[bad_ch]
+                ch for ch in neighbors[bad_ch]
                 if ch in ch_to_idx and ch not in bad_set
             ]
 
@@ -332,7 +379,7 @@ class Subject:
             neigh_idx = np.array([ch_to_idx[ch] for ch in good_neighs], dtype=int)
 
             # Distances from this bad channel to its good neighbours
-            distances_to_good_neighbors = BIOSEMI_DISTANCE_MATRIX[bad_idx, neigh_idx]
+            distances_to_good_neighbors = dist_matrix[bad_idx, neigh_idx]
 
             # Inverse-distance weights
             if np.any(distances_to_good_neighbors == 0):
@@ -359,22 +406,7 @@ class Subject:
         epochs.info["bads"] = []
         print(f"  {label}: Interpolated {bads} with FieldTrip-style weighted neighbours")
 
-    def _create_epochs(self, raw, sample_frequency: int = 2048):
-        onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
-
-        prestim_samp = math.ceil(0.2 * sample_frequency) # 410
-        poststim_samp = math.ceil(5.0 * sample_frequency) # 10240
-
-        # each row is [sample ID, dummy value for previous value, event ID (all events are of the same type, so dummy value 1 is ok here)]
-        events = np.column_stack([onset_samples, np.zeros(len(onset_samples), dtype=int), np.ones(len(onset_samples), dtype=int)])
-
-        tmin = - prestim_samp / sample_frequency
-        tmax = poststim_samp / sample_frequency
-
-        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None)
-        return epochs
-
-    def _save(self, ep1, ep2, output_dir):
+    def save(self, ep1, ep2, output_dir):
         """Saves the final Epochs objects to disk (MATLAB's save function)."""
         pair_num = self.id.replace('sub-', '')
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -393,14 +425,14 @@ class BidsDataset:
     output_path: pathlib.Path
 
     @staticmethod
-    def get_from(bids_root: pathlib.Path, output_path: pathlib.Path) -> "BidsDataset":
+    def get_from(bids_root: pathlib.Path, output_path: pathlib.Path, exclude_subjects: list[str] = ["sub-10", "sub-23", "sub-24"]) -> "BidsDataset":
         subjects = []
         tsv_path = bids_root / "participants.tsv"
         with open(tsv_path, newline="") as tsvfile:
             reader = csv.DictReader(tsvfile, delimiter="\t")
             for row in reader:
                 # Excluded subjects matching the MATLAB script's exclusions: 10, 23, 24
-                if row["participant_id"] not in ["sub-10", "sub-23", "sub-24"]:
+                if row["participant_id"] not in exclude_subjects:
                     subjects.append(Subject.from_tsv_row(bids_root, row))
         return BidsDataset(bids_root, subjects, output_path)
 
@@ -410,7 +442,7 @@ class BidsDataset:
 
         sub_completed = []  # Add subs that should not be included
         for subject in self.subjects:
-            if subject.id not in sub_not_completed:
+            if subject.id not in sub_completed:
                 subject.preprocess(self.bids_root, self.output_path)
         # self.average_results()
 
