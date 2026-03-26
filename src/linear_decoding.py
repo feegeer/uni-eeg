@@ -107,13 +107,7 @@ def zscore(train_data: np.ndarray, test_data: np.ndarray) -> tuple[np.ndarray, n
 
 
 # All classifiers: short_name -> (display_name, function)
-CLASSIFIERS = {
-  "lda_cosmo": ("LDA (CoSMoMVPA)", classify_lda_cosmo),
-  "shrinkage_lda": ("Shrinkage LDA (Ledoit-Wolf)", classify_shrinkage_lda),
-  "linear_svm": ("Linear SVM", classify_svm),
-  "logistic_reg": ("Logistic Regression", classify_logreg),
-}
-
+CLASSIFIERS = {"lda_cosmo": ("LDA (CoSMoMVPA)", classify_lda_cosmo), "shrinkage_lda": ("Shrinkage LDA (Ledoit-Wolf)", classify_shrinkage_lda), "linear_svm": ("Linear SVM", classify_svm), "logistic_reg": ("Logistic Regression", classify_logreg)}
 
 # --------------------
 # CoSMoMVPA-equivalent helper functions
@@ -222,11 +216,7 @@ def cosmo_average_samples(data: np.ndarray,
                 avg_targets_list.append(target_val)
                 avg_chunks_list.append(chunk_val)
 
-    return (
-      np.array(avg_data_list),
-      np.array(avg_targets_list),
-      np.array(avg_chunks_list),
-    )
+    return np.array(avg_data_list), np.array(avg_targets_list), np.array(avg_chunks_list)
 
 
 # --------------------
@@ -441,7 +431,7 @@ def epoch_to_timebinned_array(epochs: mne.Epochs) -> tuple[np.ndarray, np.ndarra
     return data, time_labels
 
 
-def remove_block_first_trials(data: np.ndarray, behav: np.ndarray):
+def remove_block_first_trials(data: np.ndarray, behav: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     """
     Remove the first trial of each block (previous-trial info undefined).
 
@@ -564,15 +554,7 @@ def run_decoding() -> None:
                 chunks = cosmo_chunkize(ds_targets, n_chunks=10)
 
                 # Average samples: 4 trials averaged, 20 repeats
-                avg_data, avg_targets, avg_chunks = cosmo_average_samples(
-                  ds_data,
-                  ds_targets,
-                  chunks,
-                  count=4,
-                  repeats=20,
-                  seed=1,
-                )
-
+                avg_data, avg_targets, avg_chunks = cosmo_average_samples(ds_data, ds_targets, chunks, count=4, repeats=20, seed=1)
                 n_timebins = avg_data.shape[2]
 
                 # --- Run all classifiers on identical data ---
@@ -582,43 +564,18 @@ def run_decoding() -> None:
                     temp_acc = np.zeros(n_timebins)
                     for t in range(n_timebins):
                         features = avg_data[:, :, t]
-                        temp_acc[t] = run_crossvalidation(
-                          features,
-                          avg_targets,
-                          avg_chunks,
-                          classify_fn=clf_fn,
-                          n_folds=10,
-                        )
+                        temp_acc[t] = run_crossvalidation(features, avg_targets, avg_chunks, classify_fn=clf_fn, n_folds=10)
 
                     print(f"    {target_names[test_idx]:>10s} | "
                           f"{clf_display:<30s} | "
                           f"mean acc = {temp_acc.mean() * 100:.1f}%")
 
                     # Store temporal decoding result
-                    all_decoding[clf_key][test_idx].append({
-                      "pair": pair,
-                      "player": player_num,
-                      "accuracy": temp_acc,
-                      "time_labels": time_labels,
-                    })
+                    all_decoding[clf_key][test_idx].append({"pair": pair, "player": player_num, "accuracy": temp_acc, "time_labels": time_labels})
 
-                    sl_acc = run_searchlight_channel(
-                      avg_data,
-                      avg_targets,
-                      avg_chunks,
-                      dist_matrix,
-                      classify_fn=clf_fn,
-                      n_neighbours=4,
-                      n_folds=10,
-                    )
+                    sl_acc = run_searchlight_channel(avg_data, avg_targets, avg_chunks, dist_matrix, classify_fn=clf_fn, n_neighbours=4, n_folds=10)
 
-                    all_searchlight[clf_key][test_idx].append({
-                      "pair": pair,
-                      "player": player_num,
-                      "accuracy": sl_acc,
-                      "ch_names": ch_names,
-                      "time_labels": time_labels,
-                    })
+                    all_searchlight[clf_key][test_idx].append({"pair": pair, "player": player_num, "accuracy": sl_acc, "ch_names": ch_names, "time_labels": time_labels})
 
             save_per_player_level(all_decoding, all_searchlight, time_labels, ch_names, pair, player_num)
 

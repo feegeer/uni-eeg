@@ -21,7 +21,7 @@ def main():
     # 2. Linear Decoding
     if to_do_steps["linear_decoding"]:
         linear_decoding.run_decoding()
-        visualization.plot_all(data_setup.LINEAR_DECODING_DIR)
+        visualization.plot_all_decoding(data_setup.LINEAR_DECODING_DIR)
 
     # 3. Non-Linear Decoding
     if to_do_steps["non_linear_decoding"]:
