@@ -125,8 +125,18 @@ def run_markov_analysis(data_path: Path):
         print(f"Loading pair {p + 1} of {num_pairs}")
 
         events_path = (data_path / f"sub-{pair:02d}" / "eeg" / f"sub-{pair:02d}_task-RPS_events.tsv")
+        
+        #Skipping if no TSV  file is in the folder 
+        if not events_path.exists():
+            print(f"Skipping sub-{pair:02d}: file not found")
+            continue
 
-        events = pd.read_csv(events_path, sep="\t")
+
+        try:
+            events = pd.read_csv(events_path, sep="\t")
+        except Exception as e:
+            print(f"Error reading sub-{pair:02d}: {e}")
+            continue
 
         responses = np.column_stack([
           events["player1_resp"].to_numpy(),
@@ -144,7 +154,7 @@ def run_markov_analysis(data_path: Path):
             Mean_Accuracy[p, ppt, :] = mean_acc
             M_pred[p, ppt, :, :, :] = pred
 
-    out_path = data_path / "markov_analysis"
+    out_path = data_path / "results/markov_analysis"
     out_path.mkdir(exist_ok=True)
 
     np.savez(
