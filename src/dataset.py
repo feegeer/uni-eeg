@@ -253,8 +253,8 @@ class Subject:
         del raw
         gc.collect()
 
-        # raw_p1.filter(l_freq=0.5, h_freq=40.0)
-        # raw_p2.filter(l_freq=0.5, h_freq=40.0)
+        # raw_p1.filter(l_freq=1.0, h_freq=35.0)
+        # raw_p2.filter(l_freq=1.0, h_freq=35.0)
 
         # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
         epochs_p1 = self.epoch_players(raw_p1)
@@ -267,13 +267,14 @@ class Subject:
         self.interpolate(epochs_p1, self.player1, "Player 1")
         self.interpolate(epochs_p2, self.player2, "Player 2")
 
+
         if not epochs_p1.preload:
             epochs_p1.load_data()
-        epochs_p1.resample(512, verbose=False)
+        epochs_p1.resample(256, verbose=False)
 
         if not epochs_p2.preload:
             epochs_p2.load_data()
-        epochs_p2.resample(512, verbose=False)
+        epochs_p2.resample(256, verbose=False)
 
         # 7. Save (MATLAB's save function)
         self.save(epochs_p1, epochs_p2, output_dir)
@@ -368,6 +369,7 @@ class Subject:
                 ch for ch in neighbors[bad_ch]
                 if ch in ch_to_idx and ch not in bad_set
             ]
+            print(f"good neighbours of {bad_ch}: {good_neighs}")
 
             # Zero out self-copying for this bad channel
             repair[bad_idx, bad_idx] = 0.0
