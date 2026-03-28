@@ -56,13 +56,13 @@ def pipeline_progress_check() -> dict[str, bool]:
     Returns:
         dict[str, bool]: steps of the pipeline to do
     """
-    to_do = lambda d: not any(p.is_file() for p in d.iterdir())
+    to_do = lambda d, n: not sum(1 for p in d.iterdir() if p.is_file()) >= n
 
     to_do_steps = {
-      "markov_analysis": to_do(MARKOV_DIR),
-      "preprocessing": to_do(PREPROCESSED_DIR),
-      "linear_decoding": to_do(LINEAR_DECODING_DIR),
-      "non_linear_decoding": to_do(NON_LINEAR_DIR),
+      "markov_analysis": to_do(MARKOV_DIR, 2),
+      "preprocessing": to_do(PREPROCESSED_DIR, len(SUB_IDS) * 2),
+      "linear_decoding": to_do(LINEAR_DECODING_DIR, (len(SUB_IDS) + 1) * 4),
+      "non_linear_decoding": to_do(NON_LINEAR_DIR, 10),
     }
 
     return to_do_steps

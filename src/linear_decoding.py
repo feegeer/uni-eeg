@@ -30,7 +30,7 @@ mne.set_log_level("WARNING")
 
 PATH_TO_DATA = pathlib.Path("data/ds006761")
 PATH_TO_DERIVATIVES = pathlib.Path("data/results/preprocessed_eeg")
-PATH_TO_RESULTS = pathlib.Path("data/results/multi_classifier_decoding")
+PATH_TO_RESULTS = pathlib.Path("data/results/linear_decoding")
 
 PAIR_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
 

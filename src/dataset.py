@@ -27,7 +27,7 @@ BIOSEMI_ORDERED_CODES = [
 
 def _biosemi64_mat_path() -> pathlib.Path:
     """Absolute path to the bundled BioSemi 3D coordinates matrix."""
-    return pathlib.Path(__file__).resolve().parent / "biosemi64.mat"
+    return pathlib.Path("data/biosemi64.mat")
 
 
 @lru_cache(maxsize=1)
@@ -442,9 +442,11 @@ class BidsDataset:
         print(f"Starting preprocessing for {len(self.subjects)} subjects.")
         print(f"Outputting processed data to: {self.output_path}")
 
-        sub_completed = []  # Add subs that should not be included
+        sub_completed = []
+        for i in range(21, 35):
+            sub_completed.append(f"sub-{i:02d}")
         for subject in self.subjects:
-            if subject.id not in sub_completed:
+            if subject.id in sub_completed:
                 subject.preprocess(self.bids_root, self.output_path)
         # self.average_results()
 
