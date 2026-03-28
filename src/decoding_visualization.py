@@ -22,15 +22,16 @@ import mne
 import numpy as np
 import seaborn as sns
 
+
 mne.set_log_level("ERROR")
 
 # Configuration:
 
 DECODING_METHODS = {
-    "LDA": "lda_cosmo",
-    "Shrinkage LDA": "shrinkage_lda",
-    "Linear SVM": "linear_svm",
-    "Logistic Regression": "logistic_reg",
+  "LDA": "lda_cosmo",
+  "Shrinkage LDA": "shrinkage_lda",
+  "Linear SVM": "linear_svm",
+  "Logistic Regression": "logistic_reg",
 }
 
 PAIR_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
@@ -39,30 +40,23 @@ CHANCE = 100 / 3  # 3-class chance level (%)
 
 PHASES = {"Decision": (0, 2), "Response": (2, 4), "Feedback": (4, 5)}
 PHASE_COLORS = {
-    "Decision": "#F5A623",
-    "Response": "#D0021B",
-    "Feedback": "#9013FE",
+  "Decision": "#F5A623",
+  "Response": "#D0021B",
+  "Feedback": "#9013FE",
 }
-
 TARGET_TITLES = {
-    0: "(a) Own response",
-    1: "(b) Opponent's response",
-    2: "(c) Own previous response",
-    3: "(d) Opponent's previous response",
+  0: "(a) Own response",
+  1: "(b) Opponent's response",
+  2: "(c) Own previous response",
+  3: "(d) Opponent's previous response",
 }
-
 WINDOW_LABELS = ["0-1 s", "1-2 s", "2-3 s", "3-4 s", "4-5 s"]
-
 Y_MIN, Y_MAX = 30, 40
 
+# Data loading:
 
-#  Data loading
 
-
-def load_decoding_results(
-    results_dir: pathlib.Path,
-    method_name: str,
-) -> tuple[dict[int, np.ndarray], np.ndarray]:
+def load_decoding_results(results_dir: pathlib.Path, method_name: str) -> tuple[dict[int, np.ndarray], np.ndarray]:
     """
     Load temporal decoding results — group file first, per-player fallback.
 
@@ -75,11 +69,7 @@ def load_decoding_results(
 
     if group_path.exists():
         data = np.load(group_path, allow_pickle=True)
-        scores = {
-            t: data[f"decoding_{t}"]
-            for t in TARGET_TITLES
-            if f"decoding_{t}" in data
-        }
+        scores = {t: data[f"decoding_{t}"] for t in TARGET_TITLES if f"decoding_{t}" in data}
         return scores, data["time_labels"]
 
     # Fallback: aggregate from per-player files
@@ -95,17 +85,11 @@ def load_decoding_results(
             if f"decoding_acc_{t}" in data:
                 per_target[t].append(data[f"decoding_acc_{t}"])
 
-    scores = {
-        t: np.vstack(v) if v else np.empty((0, 20))
-        for t, v in per_target.items()
-    }
+    scores = {t: np.vstack(v) if v else np.empty((0, 20)) for t, v in per_target.items()}
     return scores, time_labels
 
 
-def load_searchlight_results(
-    results_dir: pathlib.Path,
-    method_name: str,
-) -> tuple[dict[int, np.ndarray], list[str]]:
+def load_searchlight_results(results_dir: pathlib.Path, method_name: str) -> tuple[dict[int, np.ndarray], list[str]]:
     """
     Load searchlight accuracies from per-player .npz files.
 
@@ -128,10 +112,7 @@ def load_searchlight_results(
             if key in data:
                 per_target[t].append(data[key])
 
-    sl_scores = {
-        t: np.stack(v, axis=0) if v else None
-        for t, v in per_target.items()
-    }
+    sl_scores = {t: np.stack(v, axis=0) if v else None for t, v in per_target.items()}
     return sl_scores, ch_names
 
 
@@ -158,17 +139,15 @@ def make_mne_info(ch_names: list[str]) -> mne.Info:
     return info
 
 
-#  Plotting ─
+#  Plotting:
 
 
-def plot_decoding_with_topomaps(
-    temporal_scores: dict[int, np.ndarray],
-    sl_scores: dict[int, np.ndarray | None],
-    time_centres: np.ndarray,
-    ch_names: list[str] | None,
-    method_name: str,
-    output_path: pathlib.Path | None = None,
-) -> plt.Figure:
+def plot_decoding_with_topomaps(temporal_scores: dict[int, np.ndarray],
+                                sl_scores: dict[int, np.ndarray | None],
+                                time_centres: np.ndarray,
+                                ch_names: list[str] | None,
+                                method_name: str,
+                                output_path: pathlib.Path | None = None) -> plt.Figure:
     """
     Create Figure-2-style 2x2 plot: line plots + searchlight topomaps.
 
@@ -191,10 +170,10 @@ def plot_decoding_with_topomaps(
     sns.set_style("ticks")
     has_sl = ch_names is not None and any(v is not None for v in sl_scores.values())
 
-    #  Build the MNE Info once 
+    #  Build the MNE Info once
     info = make_mne_info(ch_names) if has_sl else None
 
-    #  Compute shared colour limits across all targets 
+    #  Compute shared colour limits across all targets
     # This ensures the topomaps are comparable across panels.
     sl_vmin = CHANCE
     sl_vmax = CHANCE + 1.0  # fallback
@@ -208,7 +187,7 @@ def plot_decoding_with_topomaps(
         if all_maxes:
             sl_vmax = max(max(all_maxes), sl_vmin + 1.0)
 
-    #  Figure geometry 
+    #  Figure geometry
     # Each panel: line plot (tall) + topomap row (short).
     # Outer grid: 2 rows x 2 columns of panels.
     # Inner grid per panel: 2 rows (line plot height ≈ 3x topo height).
@@ -217,12 +196,7 @@ def plot_decoding_with_topomaps(
     panel_h = line_h + topo_h
     fig = plt.figure(figsize=(14, 2 * panel_h + 3.5))
 
-    outer = gridspec.GridSpec(
-        2, 2,
-        figure=fig,
-        hspace=0.65,
-        wspace=0.30,
-    )
+    outer = gridspec.GridSpec(2, 2, figure=fig, hspace=0.65, wspace=0.30)
 
     target_list = list(TARGET_TITLES.keys())
 
@@ -230,36 +204,30 @@ def plot_decoding_with_topomaps(
         row, col = divmod(panel_idx, 2)
 
         # Inner grid: line plot on top, topomaps on bottom
-        inner = gridspec.GridSpecFromSubplotSpec(
-            2, 1,
-            subplot_spec=outer[row, col],
-            height_ratios=[line_h, topo_h],
-            hspace=0.55,
-        )
+        inner = gridspec.GridSpecFromSubplotSpec(2,
+                                                 1,
+                                                 subplot_spec=outer[row, col],
+                                                 height_ratios=[line_h, topo_h],
+                                                 hspace=0.55)
 
-        #  Line plot 
+        #  Line plot
         ax_line = fig.add_subplot(inner[0])
         _draw_temporal_line(ax_line, temporal_scores.get(t), time_centres, t)
 
-        #  Topomaps 
-        topo_inner = gridspec.GridSpecFromSubplotSpec(
-            1, 5,
-            subplot_spec=inner[1],
-            wspace=0.08,
-        )
+        #  Topomaps
+        topo_inner = gridspec.GridSpecFromSubplotSpec(1, 5, subplot_spec=inner[1], wspace=0.08)
         topo_axes = [fig.add_subplot(topo_inner[0, c]) for c in range(5)]
 
         arr = sl_scores.get(t) if has_sl else None
         if arr is not None:
             group_mean_1s = collapse_to_1s_windows(arr.mean(axis=0))  # (n_ch, 5)
-            _draw_topomaps(topo_axes, group_mean_1s, info, sl_vmin, sl_vmax)
+            draw_topomaps(topo_axes, group_mean_1s, info, sl_vmin, sl_vmax)
         else:
             for ax in topo_axes:
                 ax.axis("off")
-                ax.text(0.5, 0.5, "no data", ha="center", va="center",
-                        fontsize=8, color="grey", transform=ax.transAxes)
+                ax.text(0.5, 0.5, "no data", ha="center", va="center", fontsize=8, color="grey", transform=ax.transAxes)
 
-    #  Shared colourbar for all topomaps 
+    #  Shared colourbar for all topomaps
     if has_sl:
         cbar_ax = fig.add_axes([0.25, 0.015, 0.50, 0.015])  # [left, bottom, width, height]
         sm = plt.cm.ScalarMappable(cmap="inferno", norm=plt.Normalize(sl_vmin, sl_vmax))
@@ -267,14 +235,12 @@ def plot_decoding_with_topomaps(
         cbar = fig.colorbar(sm, cax=cbar_ax, orientation="horizontal")
         cbar.set_label("Searchlight decoding accuracy (%)", fontsize=10)
 
-    #  Super-title 
+    #  Super-title
     n = next((s.shape[0] for s in temporal_scores.values() if s.shape[0] > 0), 0)
-    fig.suptitle(
-        f"{method_name} — temporal decoding & channel searchlight  (N = {n})",
-        fontsize=15,
-        fontweight="bold",
-        y=1.01,
-    )
+    fig.suptitle(f"{method_name} — temporal decoding & channel searchlight  (N = {n})",
+                 fontsize=15,
+                 fontweight="bold",
+                 y=1.01)
 
     if output_path is not None:
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -284,12 +250,7 @@ def plot_decoding_with_topomaps(
     return fig
 
 
-def _draw_temporal_line(
-    ax: plt.Axes,
-    scores: np.ndarray | None,
-    time_centres: np.ndarray,
-    target_idx: int,
-) -> None:
+def _draw_temporal_line(ax: plt.Axes, scores: np.ndarray | None, time_centres: np.ndarray, target_idx: int) -> None:
     """Draw the temporal decoding line plot on a single Axes."""
     if scores is None or scores.shape[0] == 0:
         ax.set_visible(False)
@@ -302,65 +263,42 @@ def _draw_temporal_line(
     for name, (t0, t1) in PHASES.items():
         m = (time_centres >= t0) & (time_centres <= t1)
         c = PHASE_COLORS[name]
-        ax.fill_between(
-            time_centres[m],
-            mean[m] - sem[m],
-            mean[m] + sem[m],
-            color=c, alpha=0.2, edgecolor="none",
-        )
-        ax.plot(
-            time_centres[m], mean[m],
-            color=c, lw=2.5,
-            marker="o", markersize=6,
-            markerfacecolor="white", markeredgewidth=1.5,
-        )
-        ax.text(
-            (t0 + t1) / 2, Y_MAX * 0.98, name,
-            ha="center", va="top",
-            fontsize=10, fontweight="bold", color=c,
-        )
+        ax.fill_between(time_centres[m], mean[m] - sem[m], mean[m] + sem[m], color=c, alpha=0.2, edgecolor="none")
+        ax.plot(time_centres[m],
+                mean[m],
+                color=c,
+                lw=2.5,
+                marker="o",
+                markersize=6,
+                markerfacecolor="white",
+                markeredgewidth=1.5)
+        ax.text((t0 + t1) / 2, Y_MAX * 0.98, name, ha="center", va="top", fontsize=10, fontweight="bold", color=c)
 
     ax.axhline(CHANCE, ls="--", color="#444", lw=1.2, zorder=0)
     ax.set_title(TARGET_TITLES[target_idx], loc="left", fontweight="bold", fontsize=13, pad=12)
-    ax.set(
-        ylim=(Y_MIN, Y_MAX),
-        xlim=(-0.1, 5.1),
-        ylabel="Decoding accuracy (%)",
-        xlabel="",
-        yticks=np.arange(Y_MIN, Y_MAX + 1, 5),
-    )
+    ax.set(ylim=(Y_MIN, Y_MAX),
+           xlim=(-0.1, 5.1),
+           ylabel="Decoding accuracy (%)",
+           xlabel="",
+           yticks=np.arange(Y_MIN, Y_MAX + 1, 5))
     sns.despine(ax=ax, offset=8, trim=True)
 
 
-def _draw_topomaps(
-    axes: list[plt.Axes],
-    group_mean_1s: np.ndarray,
-    info: mne.Info,
-    vmin: float,
-    vmax: float,
-) -> None:
+def draw_topomaps(axes: list[plt.Axes], group_mean_1s: np.ndarray, info: mne.Info, vmin: float, vmax: float) -> None:
     """Draw five searchlight topomaps (one per 1-s window)."""
     for i, ax in enumerate(axes):
-        mne.viz.plot_topomap(
-            group_mean_1s[:, i] * 100,
-            info,
-            axes=ax,
-            cmap="inferno",
-            vlim=(vmin, vmax),
-            show=False,
-            contours=0,
-            sensors=False,
-        )
+        mne.viz.plot_topomap(group_mean_1s[:, i] * 100,
+                             info,
+                             axes=ax,
+                             cmap="inferno",
+                             vlim=(vmin, vmax),
+                             show=False,
+                             contours=0,
+                             sensors=False)
         ax.set_title(WINDOW_LABELS[i], fontsize=8, pad=2)
 
 
-#  Public API ─
-
-
-def plot_all_decoding(
-    results_dir: pathlib.Path,
-    plots_dir: pathlib.Path | None = None,
-) -> None:
+def plot_all_decoding(results_dir: pathlib.Path, plots_dir: pathlib.Path | None = None) -> None:
     """Load and plot temporal + searchlight results for every classifier."""
     if plots_dir is None:
         plots_dir = results_dir / "plots"
@@ -377,14 +315,12 @@ def plot_all_decoding(
         # time_labels are right edges of 250 ms bins; shift to bin centres
         time_centres = time_labels - 0.125
 
-        plot_decoding_with_topomaps(
-            temporal_scores,
-            sl_scores,
-            time_centres,
-            ch_names,
-            method_name,
-            output_path=plots_dir / f"group_{method_fname}.png",
-        )
+        plot_decoding_with_topomaps(temporal_scores,
+                                    sl_scores,
+                                    time_centres,
+                                    ch_names,
+                                    method_name,
+                                    output_path=plots_dir / f"group_{method_fname}.png")
         plt.close("all")
 
     print("All plots saved.")

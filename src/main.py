@@ -13,7 +13,7 @@ def main():
     # 0. Setup Check
     data_setup.data_structure_setup()
     to_do_steps = data_setup.pipeline_progress_check()
-    
+
     # 1. Preprocessing
     if to_do_steps["preprocessing"]:
         bids_dataset = dataset.BidsDataset.get_from(data_setup.DATA_ROOT, data_setup.PREPROCESSED_DIR)
