@@ -43,7 +43,7 @@ def data_structure_setup() -> None:
     LINEAR_DECODING_DIR.mkdir(exist_ok=True)
     NON_LINEAR_DIR.mkdir(exist_ok=True)
     MARKOV_DIR.mkdir(exist_ok=True)
-    
+
     # 3. biosemi64.mat
     if not BIOSEMI_PATH.exists():
         print(f"{BIOSEMI_PATH} does not exist.")
@@ -60,7 +60,8 @@ def pipeline_progress_check() -> dict[str, bool]:
 
     to_do_steps = {
       "markov_analysis": to_do(MARKOV_DIR, 2),
-      "preprocessing": to_do(PREPROCESSED_DIR, len(SUB_IDS) * 2),
+      "preprocessing": to_do(PREPROCESSED_DIR,
+                             len(SUB_IDS) * 2),
       "linear_decoding": to_do(LINEAR_DECODING_DIR, (len(SUB_IDS) + 1) * 4),
       "non_linear_decoding": to_do(NON_LINEAR_DIR, 10),
     }

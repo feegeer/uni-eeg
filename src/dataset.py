@@ -42,8 +42,7 @@ def biosemi_coords_3d() -> np.ndarray:
     """Load BioSemi64 3D coordinates from the local `.mat` file."""
     mat_path = _biosemi64_mat_path()
     if not mat_path.exists():
-        raise FileNotFoundError(
-            f"biosemi64.mat not found at {mat_path}. ")
+        raise FileNotFoundError(f"biosemi64.mat not found at {mat_path}. ")
     mat_contents = scipy.io.loadmat(str(mat_path))
     return mat_contents["biosemi64"]
 
@@ -71,12 +70,10 @@ def fieldtrip_neighbors() -> dict[str, list[str]]:
     dist = biosemi_distance_matrix()
     neighbors: dict[str, list[str]] = {}
     for i, ch in enumerate(labels):
-        neighbor_index = [
-            j for j in range(len(labels))
-            if j != i and dist[i, j] < 0.5
-        ]
+        neighbor_index = [j for j in range(len(labels)) if j != i and dist[i, j] < 0.5]
         neighbors[ch] = [labels[j] for j in neighbor_index]
     return neighbors
+
 
 class Gender(enum.Enum):
     MALE = "M"
@@ -267,7 +264,6 @@ class Subject:
         self.interpolate(epochs_p1, self.player1, "Player 1")
         self.interpolate(epochs_p2, self.player2, "Player 2")
 
-
         if not epochs_p1.preload:
             epochs_p1.load_data()
         epochs_p1.resample(256, verbose=False)
@@ -315,17 +311,19 @@ class Subject:
             player_raws.append(player_raw)
         return player_raws[0], player_raws[1]
 
-
     def epoch_players(self, raw, sample_frequency: int = 2048):
         onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
 
-        prestim_samp = math.ceil(0.2 * sample_frequency) # 410
-        poststim_samp = math.ceil(5.0 * sample_frequency) # 10240
+        prestim_samp = math.ceil(0.2 * sample_frequency)  # 410
+        poststim_samp = math.ceil(5.0 * sample_frequency)  # 10240
 
         # each row is [sample ID, dummy value for previous value, event ID (all events are of the same type, so dummy value 1 is ok here)]
-        events = np.column_stack([onset_samples, np.zeros(len(onset_samples), dtype=int), np.ones(len(onset_samples), dtype=int)])
+        events = np.column_stack(
+          [onset_samples,
+           np.zeros(len(onset_samples), dtype=int),
+           np.ones(len(onset_samples), dtype=int)])
 
-        tmin = - prestim_samp / sample_frequency
+        tmin = -prestim_samp / sample_frequency
         tmax = poststim_samp / sample_frequency
 
         epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None)
@@ -365,10 +363,7 @@ class Subject:
             bad_idx = ch_to_idx[bad_ch]
 
             # FieldTrip starts from the neighbour definition and removes bad channels
-            good_neighs = [
-                ch for ch in neighbors[bad_ch]
-                if ch in ch_to_idx and ch not in bad_set
-            ]
+            good_neighs = [ch for ch in neighbors[bad_ch] if ch in ch_to_idx and ch not in bad_set]
             print(f"good neighbours of {bad_ch}: {good_neighs}")
 
             # Zero out self-copying for this bad channel
@@ -427,7 +422,9 @@ class BidsDataset:
     output_path: pathlib.Path
 
     @staticmethod
-    def get_from(bids_root: pathlib.Path, output_path: pathlib.Path, exclude_subjects: list[str] = ["sub-10", "sub-23", "sub-24"]) -> "BidsDataset":
+    def get_from(bids_root: pathlib.Path,
+                 output_path: pathlib.Path,
+                 exclude_subjects: list[str] = ["sub-10", "sub-23", "sub-24"]) -> "BidsDataset":
         subjects = []
         tsv_path = bids_root / "participants.tsv"
         with open(tsv_path, newline="") as tsvfile:
