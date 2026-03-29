@@ -25,7 +25,9 @@ import seaborn as sns
 
 mne.set_log_level("ERROR")
 
-# Configuration:
+# --------------------
+# Configuration
+# --------------------
 
 DECODING_METHODS = {
   "LDA": "lda_cosmo",
@@ -53,7 +55,9 @@ TARGET_TITLES = {
 WINDOW_LABELS = ["0-1 s", "1-2 s", "2-3 s", "3-4 s", "4-5 s"]
 Y_MIN, Y_MAX = 30, 40
 
-# Data loading:
+# --------------------
+# Data loading
+# --------------------
 
 
 def load_decoding_results(results_dir: pathlib.Path, method_name: str) -> tuple[dict[int, np.ndarray], np.ndarray]:
@@ -139,7 +143,9 @@ def make_mne_info(ch_names: list[str]) -> mne.Info:
     return info
 
 
-#  Plotting:
+# --------------------
+#  Plotting
+# --------------------
 
 
 def plot_decoding_with_topomaps(temporal_scores: dict[int, np.ndarray],
