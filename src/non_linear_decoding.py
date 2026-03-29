@@ -316,10 +316,10 @@ def plot_paper(all_results):
         ax.plot(t, mean, marker="o")
 
         ax.axhline(33.3, linestyle="--", color="black")
-
-        ax.axvspan(0, 2, alpha=0.1)
-        ax.axvspan(2, 4, alpha=0.1)
-        ax.axvspan(4, 5, alpha=0.1)
+        
+        ax.axvspan(0, 2, alpha=0.1, color="orange")   # Decision phase
+        ax.axvspan(2, 4, alpha=0.1, color="red")      # Response phase
+        ax.axvspan(4, 5, alpha=0.1, color="purple")   # Feedback phase
 
         ax.set_title(titles[i])
         ax.set_ylim(30, 42)
