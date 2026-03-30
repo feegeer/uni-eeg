@@ -27,7 +27,7 @@ Before touching the EEG data, we first verify that the behavioural patterns repo
 
 ### 2. Preprocess the EEG in MNE-Python
 
-The original paper used FieldTrip for preprocessing (average re-referencing, epoching, bad channel interpolation, downsampling to 256 Hz, no filtering). We re-implement this in MNE-Python, which required writing custom routines in some places (e.g., channel interpolation parameters) since an exact 1:1 match between FieldTrip and MNE is not always possible. We document where and why our pipeline deviates.
+The original paper used FieldTrip for preprocessing (epoching, bad channel interpolation, downsampling to 256 Hz, no filtering). We re-implement this in MNE-Python, which required writing custom routines in some places (e.g., channel interpolation parameters) since an exact 1:1 match between FieldTrip and MNE is not always possible. We document where and why our pipeline deviates.
 
 ### 3. Reproduce the LDA decoding pipeline
 
