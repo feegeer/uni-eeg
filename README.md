@@ -198,5 +198,5 @@ In case there is no time to run all the steps, we have uploaded the results from
 **Key toolboxes used:**
 - [MNE-Python](https://mne.tools/) — EEG preprocessing and data handling
 - [scikit-learn](https://scikit-learn.org/) — LDA, SVM, and Logistic Regression classifiers
-- [EEGNet](https://github.com/vlawhern/arl-eegnet) — convolutional neural network for EEG decoding
+- [EEGNet](https://eegnet.org/) — convolutional neural network for EEG decoding
 - [CoSMoMVPA](https://www.cosmomvpa.org/) — the MATLAB toolbox used in the original paper (our Python code reimplements its core routines)
