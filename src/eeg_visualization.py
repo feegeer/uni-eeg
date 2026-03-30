@@ -1,7 +1,14 @@
+"""
+Raincloud plots for behavioural analysis of the RPS dataset.
+ 
+Generates Figures 1c, 1d, and 1e from the paper: game outcome
+distributions, response biases, and game-to-game response changes.
+"""
+
 import pathlib
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from scipy.stats import gaussian_kde
 
 
@@ -11,8 +18,19 @@ def draw_raincloud_plot(data: list[list[float]],
                         colors: list[str],
                         yticks: list[float],
                         hline_height: float,
-                        filepath: None | pathlib.Path = None) -> None:
-
+                        filepath: pathlib.Path | None = None) -> None:
+    """
+    Draw a vertical raincloud plot (box + half-violin + jittered scatter).
+ 
+    Args:
+        data:          list of distributions, one per category.
+        feature_names: x-axis labels for each category.
+        plot_title:    figure title.
+        colors:        fill colour per category.
+        yticks:        explicit y-axis tick positions.
+        hline_height:  y-value for the dashed chance line.
+        filepath:      if given, save and close; otherwise plt.show().
+    """
     fig, ax = plt.subplots(figsize=(8, 4))
 
     # Boxplot
@@ -37,20 +55,90 @@ def draw_raincloud_plot(data: list[list[float]],
                          edgecolor="black")
 
     # Scatterplot
-    for index, points in enumerate(data):
-        x = np.full(len(points), index + .8)
-        idxs = np.arange(len(x))
-        out = x.astype(float)
-        out.flat[idxs] += np.random.uniform(low=-.03, high=.03, size=len(idxs))
-        x = out
-        plt.scatter(x, points, s=10, c=colors[index], edgecolors="black", linewidths=0.2)
-    ax.axhline(hline_height, linestyle='--', color="black", linewidth=0.5)
+    rng = np.random.default_rng(seed=42)
 
-    plt.xticks([1, 2, 3], feature_names)
+    for idx, points in enumerate(data):
+        n = len(points)
+        jitter = rng.uniform(-0.03, 0.03, size=n)
+        x = np.full(n, idx + 0.8) + jitter
+        ax.scatter(x, points, s=10, c=colors[idx], edgecolors="black", linewidths=0.2)
+
+    # Plots setup
+    ax.axhline(hline_height, linestyle='--', color="black", linewidth=0.5)
+    plt.xticks(range(1, len(feature_names) + 1), feature_names)
     plt.yticks(yticks)
     ax.set_ylim(bottom=yticks[0] - 2.5)
     plt.ylabel('Percentage')
     plt.title(plot_title)
-    plt.show()
+
     if filepath is not None:
-        ...
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+    else:
+        plt.show()
+
+
+def generate_plot_1c(subjects: list, output_path: pathlib.Path) -> None:
+    """Figure 1c — distribution of game outcomes (winner wins / loses / draw)."""
+    data = [[], [], []]
+
+    for subject in subjects:
+        pct_won, pct_lost, pct_drawn = subject.get_winners_outcome_distribution()
+        data[0].append(pct_won)
+        data[1].append(pct_lost)
+        data[2].append(pct_drawn)
+
+    draw_raincloud_plot(
+      data,
+      feature_names=["Winner wins", "Winner loses", "Draw"],
+      plot_title="Game outcome",
+      colors=["#2d708e", "#404788", "#481567"],
+      yticks=list(range(20, 50, 5)),
+      hline_height=100 / 3,
+      filepath=output_path / "1c.png",
+    )
+
+
+def generate_plot_1d(subjects: list, output_path: pathlib.Path) -> None:
+    """Figure 1d — response bias (most / mid / least played)."""
+    data = [[], [], []]
+
+    for subject in subjects:
+        for player_counts in subject.get_most_mid_least_played_responses():
+            counts = list(player_counts.values())
+            total = sum(counts)
+            pcts = [c * 100 / total for c in counts]
+            data[0].append(pcts[0])
+            data[1].append(pcts[1])
+            data[2].append(pcts[2])
+
+    draw_raincloud_plot(
+      data,
+      feature_names=["Most played", "Mid played", "Least played"],
+      plot_title="Response played",
+      colors=["#cb4149", "#f5dc4e", "#f78310"],
+      yticks=list(range(20, 50, 5)),
+      hline_height=100 / 3,
+      filepath=output_path / "1d.png",
+    )
+
+
+def generate_plot_1e(subjects: list, output_path: pathlib.Path) -> None:
+    """Figure 1e — game-to-game response change rate by prior outcome."""
+    data = [[], [], []]
+
+    for subject in subjects:
+        after_win, after_loss, after_draw = subject.get_response_changes_distributions()
+        data[0] += after_win
+        data[1] += after_loss
+        data[2] += after_draw
+
+    draw_raincloud_plot(
+      data,
+      feature_names=["After win", "After loss", "After draw"],
+      plot_title="Game-to-game response change",
+      colors=["#2d708e", "#404788", "#481567"],
+      yticks=list(range(20, 120, 20)),
+      hline_height=200 / 3,
+      filepath=output_path / "1e.png",
+    )

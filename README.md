@@ -171,7 +171,7 @@ uni-eeg/
 │   │   ├── preprocessed_eeg/      # Preprocessed EEG *.fif files
 │   │   ├── linear_decoding/       # Decoding results for all four linear decoding methods
 │   │   ├── non_linear_decoding/   # Decoding results for EEGNet
-│   │   └── markov_analysis/       # Results from Markov analysis
+│   │   └── markov_and_statistics/ # Results from Markov analysis and Statistical plots
 │   ├── biosemi64.mat              # Channel positions for the BioSemi 64-channel cap (MATLAB format)
 │   └── biosemi64.lay              # Channel layout for the BioSemi 64-channel cap (FieldTrip text format)
 ├── pyproject.toml                 # Python package config & dependencies

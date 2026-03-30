@@ -43,13 +43,25 @@ class EEGNet(nn.Module):
     def __init__(self, n_channels: int, n_classes: int):
         super().__init__()
 
-        self.net = nn.Sequential(nn.Conv2d(1, 32, (1, 5), padding=(0, 2)),
-                                 nn.BatchNorm2d(32), nn.ELU(), nn.Dropout(0.3), nn.Conv2d(32,
-                                                                                          64, (1, 5),
-                                                                                          padding=(0, 2)),
-                                 nn.BatchNorm2d(64), nn.ELU(), nn.Dropout(0.3), nn.Conv2d(64, 64, (n_channels, 1)),
-                                 nn.BatchNorm2d(64), nn.ELU(), nn.AdaptiveAvgPool2d((1, 1)), nn.Flatten(),
-                                 nn.Linear(64, n_classes))
+        self.net = nn.Sequential(
+            nn.Conv2d(1, 32, (1, 5), padding=(0, 2)),
+            nn.BatchNorm2d(32), 
+            nn.ELU(), 
+            nn.Dropout(0.3), 
+            
+            nn.Conv2d(32, 64, (1, 5), padding=(0, 2)),
+            nn.BatchNorm2d(64), 
+            nn.ELU(), 
+            nn.Dropout(0.3), 
+            
+            nn.Conv2d(64, 64, (n_channels, 1)),
+            nn.BatchNorm2d(64), 
+            nn.ELU(), 
+            
+            nn.AdaptiveAvgPool2d((1, 1)), 
+            nn.Flatten(),
+            nn.Linear(64, n_classes)
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)

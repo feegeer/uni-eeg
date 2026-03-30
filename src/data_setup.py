@@ -1,15 +1,24 @@
+"""
+Project paths, constants, and pipeline setup utilities.
+ 
+Central configuration for the RPS EEG reanalysis project.
+All other modules import paths and subject IDs from here.
+"""
+
 from pathlib import Path
 
 
 DATA_ROOT = Path("data/ds006761")
 RESULTS_ROOT = Path("data/results")
 BIOSEMI_PATH = Path("data/biosemi64.mat")
+
 PREPROCESSED_DIR = RESULTS_ROOT / "preprocessed_eeg"
-MARKOV_DIR = RESULTS_ROOT / "markov_analysis"
+MARKOV_STATS_DIR = RESULTS_ROOT / "markov_and_statistics"
 LINEAR_DECODING_DIR = RESULTS_ROOT / "linear_decoding"
 NON_LINEAR_DIR = RESULTS_ROOT / "non_linear_decoding"
 
 # Dataset
+# Excluded: pair 10 (CMS issues), 23 (no triggers), 24 (CMS issues)
 SUB_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
 STR_SUB_ID = [f"sub-{n:02d}" for n in SUB_IDS]
 
@@ -42,7 +51,7 @@ def data_structure_setup() -> None:
     PREPROCESSED_DIR.mkdir(exist_ok=True)
     LINEAR_DECODING_DIR.mkdir(exist_ok=True)
     NON_LINEAR_DIR.mkdir(exist_ok=True)
-    MARKOV_DIR.mkdir(exist_ok=True)
+    MARKOV_STATS_DIR.mkdir(exist_ok=True)
 
     # 3. biosemi64.mat
     if not BIOSEMI_PATH.exists():
@@ -59,7 +68,7 @@ def pipeline_progress_check() -> dict[str, bool]:
     to_do = lambda d, n: not sum(1 for p in d.iterdir() if p.is_file()) >= n
 
     to_do_steps = {
-      "markov_analysis": to_do(MARKOV_DIR, 1),
+      "markov_stats": to_do(MARKOV_STATS_DIR, 1),
       "preprocessing": to_do(PREPROCESSED_DIR,
                              len(SUB_IDS) * 2),
       "linear_decoding": to_do(LINEAR_DECODING_DIR, (len(SUB_IDS) + 1) * 4),
