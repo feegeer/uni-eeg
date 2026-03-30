@@ -1,15 +1,24 @@
+"""
+Project paths, constants, and pipeline setup utilities.
+ 
+Central configuration for the RPS EEG reanalysis project.
+All other modules import paths and subject IDs from here.
+"""
+
 from pathlib import Path
 
 
 DATA_ROOT = Path("data/ds006761")
 RESULTS_ROOT = Path("data/results")
 BIOSEMI_PATH = Path("data/biosemi64.mat")
+
 PREPROCESSED_DIR = RESULTS_ROOT / "preprocessed_eeg"
 MARKOV_STATS_DIR = RESULTS_ROOT / "markov_and_statistics"
 LINEAR_DECODING_DIR = RESULTS_ROOT / "linear_decoding"
 NON_LINEAR_DIR = RESULTS_ROOT / "non_linear_decoding"
 
 # Dataset
+# Excluded: pair 10 (CMS issues), 23 (no triggers), 24 (CMS issues)
 SUB_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
 STR_SUB_ID = [f"sub-{n:02d}" for n in SUB_IDS]
 
