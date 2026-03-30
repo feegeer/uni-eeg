@@ -24,7 +24,7 @@ def main():
 
     # 2. Linear Decoding
     if to_do_steps["linear_decoding"]:
-        linear_decoding.run_decoding()
+        linear_decoding.run_decoding(data_setup.DATA_ROOT, data_setup.PREPROCESSED_DIR, data_setup.LINEAR_DECODING_DIR)
         decoding_visualization.plot_all_decoding(data_setup.LINEAR_DECODING_DIR)
     else:
         print("Linear Decoding already completed!")

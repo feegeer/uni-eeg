@@ -28,10 +28,6 @@ mne.set_log_level("WARNING")
 # Paths and constants
 # --------------------
 
-PATH_TO_DATA = pathlib.Path("data/ds006761")
-PATH_TO_DERIVATIVES = pathlib.Path("data/results/preprocessed_eeg")
-PATH_TO_RESULTS = pathlib.Path("data/results/linear_decoding")
-
 PAIR_IDS = list(range(1, 10)) + list(range(11, 23)) + list(range(25, 35))
 
 NUM_TRIALS = 480
@@ -453,7 +449,7 @@ def remove_block_first_trials(data: np.ndarray, behav: np.ndarray) -> tuple[np.n
     return data[keep_mask], behav[keep_mask]
 
 
-def save_group_level(all_decoding: dict, time_labels: np.ndarray) -> None:
+def save_group_level(all_decoding: dict, time_labels: np.ndarray, output_dir: pathlib.Path) -> None:
     print("\nSaving group-level summaries...")
     for clf_key, (clf_display, _) in CLASSIFIERS.items():
         group_summary = {}
@@ -464,15 +460,15 @@ def save_group_level(all_decoding: dict, time_labels: np.ndarray) -> None:
                 group_summary[f"decoding_{t}_players"] = np.array([d["player"] for d in all_decoding[clf_key][t]])
 
         group_summary["time_labels"] = time_labels
-        group_path = PATH_TO_RESULTS / f"group_{clf_key}.npz"
+        group_path = output_dir / f"group_{clf_key}.npz"
         np.savez_compressed(group_path, **group_summary)
         print(f"  {clf_display} -> {group_path.name}")
 
 
 def save_per_player_level(all_decoding: dict, all_searchlight: dict, time_labels: np.ndarray, ch_names: list[str],
-                          pair: int, player_num: int) -> None:
+                          pair: int, player_num: int, output_dir: pathlib.Path) -> None:
     for clf_key in CLASSIFIERS:
-        out_path = (PATH_TO_RESULTS / f"pair-{pair:02d}_player-{player_num}_task-RPS_{clf_key}.npz")
+        out_path = (output_dir / f"pair-{pair:02d}_player-{player_num}_task-RPS_{clf_key}.npz")
         save_dict = {}
         for t in range(4):
             save_dict[f"decoding_acc_{t}"] = all_decoding[clf_key][t][-1]["accuracy"]
@@ -491,7 +487,7 @@ def save_per_player_level(all_decoding: dict, all_searchlight: dict, time_labels
 # --------------------
 
 
-def run_decoding() -> None:
+def run_decoding(data_root: pathlib.Path, preprocessed_dir: pathlib.Path, output_dir: pathlib.Path) -> None:
     """
     Run the full decoding pipeline for all pairs, players, and classifiers.
 
@@ -509,7 +505,7 @@ def run_decoding() -> None:
         print(f"Loading pair {p_idx + 1} of {len(PAIR_IDS)} (pair ID {pair:02d})")
 
         # Load behavioural data
-        events = load_events(PATH_TO_DATA, pair)
+        events = load_events(data_root, pair)
         player1_behav, player2_behav = build_behaviour_matrices(events)
         all_behav = [player1_behav, player2_behav]
 
@@ -518,7 +514,7 @@ def run_decoding() -> None:
             print(f"  Player {player_num}")
 
             # Load preprocessed epochs
-            fif_path = (PATH_TO_DERIVATIVES / f"pair-{pair:02d}_player-{player_num}_task-RPS_eeg_epo.fif")
+            fif_path = (preprocessed_dir / f"pair-{pair:02d}_player-{player_num}_task-RPS_eeg_epo.fif")
             if not fif_path.exists():
                 print(f"    Skipping: {fif_path.name} not found")
                 continue
@@ -609,8 +605,8 @@ def run_decoding() -> None:
                       "time_labels": time_labels
                     })
 
-            save_per_player_level(all_decoding, all_searchlight, time_labels, ch_names, pair, player_num)
+            save_per_player_level(all_decoding, all_searchlight, time_labels, ch_names, pair, player_num, output_dir)
 
-    save_group_level(all_decoding, time_labels)
+    save_group_level(all_decoding, time_labels, output_dir)
 
     print("Done.")
