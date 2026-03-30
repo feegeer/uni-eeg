@@ -26,20 +26,34 @@ BIOSEMI_ORDERED_CODES = [
 
 
 def _biosemi64_mat_path() -> pathlib.Path:
-    """Absolute path to the bundled BioSemi 3D coordinates matrix."""
+    """Return the path to the bundled BioSemi64 3D coordinates matrix.
+
+    The returned path is relative to the current working directory.
+
+    :returns: Path to `data/biosemi64.mat`.
+    """
     return pathlib.Path("data/biosemi64.mat")
 
 
 @lru_cache(maxsize=1)
 def ten_twenty_labels() -> list[str]:
-    """Return the BioSemi64 channel names in MNE's built-in 10-20 montage order."""
+    """Return BioSemi64 channel labels in MNE's built-in montage order.
+
+    This uses MNE's standard montage definition for `"biosemi64"` and
+    returns the first 64 EEG channel names.
+
+    :returns: Channel names in montage order.
+    """
     montage = mne.channels.make_standard_montage("biosemi64")
     return montage.ch_names[:64]
 
 
 @lru_cache(maxsize=1)
 def biosemi_coords_3d() -> np.ndarray:
-    """Load BioSemi64 3D coordinates from the local `.mat` file."""
+    """Load BioSemi64 3D coordinates from the local `.mat` file.
+
+    :returns: Array of shape `(64, 3)` containing 3D coordinates.
+    """
     mat_path = _biosemi64_mat_path()
     if not mat_path.exists():
         raise FileNotFoundError(f"biosemi64.mat not found at {mat_path}. ")
@@ -49,7 +63,10 @@ def biosemi_coords_3d() -> np.ndarray:
 
 @lru_cache(maxsize=1)
 def full_mne_biosemi_montage() -> mne.channels.DigMontage:
-    """Create an MNE DigMontage for the BioSemi64 3D coordinates."""
+    """Create an MNE `DigMontage` for the BioSemi64 3D coordinates.
+
+    :returns: Montage with `coord_frame='head'`.
+    """
     labels = ten_twenty_labels()
     coords = biosemi_coords_3d()
     ch_pos = dict(zip(labels, coords))
@@ -58,14 +75,22 @@ def full_mne_biosemi_montage() -> mne.channels.DigMontage:
 
 @lru_cache(maxsize=1)
 def biosemi_distance_matrix() -> np.ndarray:
-    """Pairwise Euclidean distances between BioSemi64 channels."""
+    """Compute the pairwise Euclidean distance matrix for BioSemi64 channels.
+
+    :returns: Square matrix of shape `(64, 64)`.
+    """
     coords = biosemi_coords_3d()
     return np.linalg.norm(coords[:, None, :] - coords[None, :, :], axis=2)
 
 
 @lru_cache(maxsize=1)
 def fieldtrip_neighbors() -> dict[str, list[str]]:
-    """Neighbour definition approximating FieldTrip's BioSemi64 template."""
+    """Build a neighbour definition approximating FieldTrip's BioSemi64 template.
+
+    Neighbours are defined by a simple distance threshold on the 3D coordinates.
+
+    :returns: Mapping from channel name to a list of neighbouring channel names.
+    """
     labels = ten_twenty_labels()
     dist = biosemi_distance_matrix()
     neighbors: dict[str, list[str]] = {}
@@ -130,6 +155,15 @@ class Subject:
 
     @staticmethod
     def from_tsv_row(bids_root, row: Mapping[Any]) -> "Subject":
+        """Create a `Subject` from a `participants.tsv` row.
+
+        This parses the participant metadata for both players and loads the
+        per-trial events from the subject's `*_events.tsv`.
+
+        :param bids_root: Root directory of the BIDS dataset.
+        :param row: Row mapping produced by `csv.DictReader`.
+        :returns: Constructed subject including player metadata and events.
+        """
         pid = row["participant_id"]
         # --- Parsing Player Metadata ---
         p1_bad = [] if not row["player1_pre_processing_channels_fixed"] else [
@@ -146,6 +180,12 @@ class Subject:
         return Subject(pid, player1, player2, events)
 
     def get_overall_outcome(self) -> Outcome:
+        """Compute the match winner across all trials.
+
+        The winner is determined by counting how many trials each player won.
+
+        :returns: `Outcome.DRAW` if tied, otherwise the overall winner.
+        """
         player1_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER1_WINS)
         player2_wins = sum(1 for event in self.events if event.outcome == Outcome.PLAYER2_WINS)
 
@@ -155,6 +195,13 @@ class Subject:
         return Outcome.PLAYER1_WINS if player1_wins > player2_wins else Outcome.PLAYER2_WINS
 
     def get_winners_outcome_distribution(self) -> tuple[float, float, float]:
+        """Compute the distribution of outcomes from the overall winner's view.
+
+        Only trials where both players responded (i.e. not
+        `Response.NO_RESPONSE`) are included.
+
+        :returns: Tuple of percentages `(winner_won, winner_lost, drawn)`.
+        """
         outcomes = [
           event.outcome for event in self.events
           if not (event.player1_response == Response.NO_RESPONSE or event.player2_response == Response.NO_RESPONSE)
@@ -175,9 +222,20 @@ class Subject:
         return winner_won * scale, winner_lost * scale, drawn * scale
 
     def get_game_outcomes(self) -> dict[Outcome, int]:
+        """Count per-trial outcomes for this subject.
+
+        :returns: Mapping from `Outcome` to count.
+        """
         return collections.Counter(event.outcome for event in self.events)
 
     def get_most_mid_least_played_responses(self) -> tuple[dict[Outcome, int], dict[Outcome, int]]:
+        """Return response frequency tables for both players.
+
+        Only trials where both players responded are included.
+
+        :returns: `(player1_counts, player2_counts)` where each mapping is
+            ordered by descending frequency.
+        """
         player1_responses = collections.Counter(
           event.player1_response for event in self.events
           if event.player1_response != Response.NO_RESPONSE and event.player2_response != Response.NO_RESPONSE)
@@ -187,6 +245,16 @@ class Subject:
         return dict(player1_responses.most_common()), dict(player2_responses.most_common())
 
     def get_response_changes_distributions(self) -> tuple[list[float], list[float], list[float]]:
+        """Compute how often each player changes response after each outcome.
+
+        The data are computed within 12 blocks of 40 trials each. For each
+        trial (except the first in a block), we look at whether the player's
+        response changed compared to the previous trial, grouped by the previous
+        trial's outcome.
+
+        :returns: Tuple `(after_win, after_loss, after_draw)` where each item
+            is `[player1_percent, player2_percent]`.
+        """
         NUM_BLOCKS = 12
         TRIALS_PER_BLOCK = 40
 
@@ -229,6 +297,7 @@ class Subject:
                     p2_lose.append(change_p2)
 
         def percent(changes: list[bool]) -> float:
+            """Convert a list of booleans to a percentage of `True` values."""
             return (sum(changes) / len(changes)) * 100 if changes else float("nan")
 
         return (
@@ -237,8 +306,33 @@ class Subject:
           [percent(p1_draw), percent(p2_draw)],  # after draw
         )
 
-    def preprocess(self, bids_root: pathlib.Path, output_dir: pathlib.Path) -> None:
-        """The main preprocessing pipeline, mirroring the structure of the MATLAB loop."""
+    def preprocess(self,
+                   bids_root: pathlib.Path,
+                   output_dir: pathlib.Path,
+                   filter: bool = False,
+                   drop_bad_channels: bool = False,
+                   detrend: None | int = None) -> None:
+        """Run the main preprocessing pipeline for a subject.
+
+        The pipeline mirrors the structure of the original MATLAB loop:
+
+        - Load raw BIDS EEG.
+        - Split into per-player streams and rename channels.
+        - Optionally band-pass filter.
+        - Epoch around each trial onset.
+        - Optionally repair/interpolate or drop marked bad channels.
+        - Resample to 256 Hz.
+        - Save per-player epochs to `output_dir`.
+
+        :param bids_root: Root directory of the BIDS dataset.
+        :param output_dir: Directory to save derivative epoch files into.
+        :param filter: If `True`, apply a 1-35 Hz band-pass filter.
+        :param drop_bad_channels: If `True`, drop channels listed in
+            `preprocessing_channels_fixed` rather than interpolating them.
+        :param detrend: Detrending parameter passed to `mne.Epochs`.
+            Use `None` for no detrending.
+        :returns: `None`.
+        """
         print(f"Processing {self.id}...")
         # 1. Load Data (FieldTrip's ft_read_header + ft_preprocessing)
         raw = self.read_raw_eeg_data(bids_root)
@@ -250,19 +344,32 @@ class Subject:
         del raw
         gc.collect()
 
-        raw_p1.filter(l_freq=1.0, h_freq=35.0)
-        raw_p2.filter(l_freq=1.0, h_freq=35.0)
+        if filter:
+            raw_p1.filter(l_freq=1.0, h_freq=35.0)
+            raw_p2.filter(l_freq=1.0, h_freq=35.0)
 
         # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
-        epochs_p1 = self.epoch_players(raw_p1, detrend=1)
-        epochs_p2 = self.epoch_players(raw_p2, detrend=1)
+        epochs_p1 = self.epoch_players(raw_p1, detrend=detrend)
+        epochs_p2 = self.epoch_players(raw_p2, detrend=detrend)
 
         del raw_p1, raw_p2
         gc.collect()
 
         # 4. Interpolate Bad Channels (MATLAB's ft_channelrepair equivalent)
-        self.interpolate(epochs_p1, self.player1, "Player 1")
-        self.interpolate(epochs_p2, self.player2, "Player 2")
+        if not drop_bad_channels:
+            self.interpolate(epochs_p1, self.player1, "Player 1")
+            self.interpolate(epochs_p2, self.player2, "Player 2")
+        else:
+            if "n/a" not in self.player1.preprocessing_channels_fixed:
+                if not epochs_p1.preload:
+                    epochs_p1.load_data()
+                print(f"Drop bad channels of player 1: {self.player1.preprocessing_channels_fixed}...")
+                epochs_p1.drop_channels(self.player1.preprocessing_channels_fixed)
+            if "n/a" not in self.player2.preprocessing_channels_fixed:
+                if not epochs_p2.preload:
+                    epochs_p2.load_data()
+                print(f"Drop bad channels of player 2: {self.player2.preprocessing_channels_fixed}...")
+                epochs_p2.drop_channels(self.player2.preprocessing_channels_fixed)
 
         if not epochs_p1.preload:
             epochs_p1.load_data()
@@ -280,6 +387,11 @@ class Subject:
         print(f"  Done {self.id}. Memory cleared.\n")
 
     def read_raw_eeg_data(self, bids_root: pathlib.Path) -> mne.io.Raw:
+        """Read the raw EEG for this subject from a BIDS dataset.
+
+        :param bids_root: Root directory of the BIDS dataset.
+        :returns: Loaded raw object with data preloaded; returns `None` if the BIDS file is missing.
+        """
         bids_path = mne_bids.BIDSPath(subject=self.id.replace("sub-", ""), task="RPS", root=bids_root)
         try:
             raw = mne_bids.read_raw_bids(bids_path, verbose=False)
@@ -290,6 +402,15 @@ class Subject:
         return raw
 
     def prepare_players(self, raw: mne.io.Raw) -> tuple[mne.io.Raw, mne.io.Raw]:
+        """Split a combined recording into per-player `Raw` objects.
+
+        This selects the expected BioSemi channels for each player based on the
+        prefix (`"2-"` then `"1-"`), renames them into MNE's BioSemi64
+        10-20 labels, marks them as EEG, and applies the local 3D montage.
+
+        :param raw: Combined raw recording containing both players.
+        :returns: Tuple `(raw_player1, raw_player2)` matching the prefix order used in the file.
+        """
         player_raws = []
 
         labels_1020 = ten_twenty_labels()
@@ -312,6 +433,15 @@ class Subject:
         return player_raws[0], player_raws[1]
 
     def epoch_players(self, raw, sample_frequency: int = 2048, detrend: None | int = None) -> mne.Epochs:
+        """Epoch a player's continuous data around trial onsets.
+
+        Trial onset samples are taken from `events`.
+
+        :param raw: Continuous raw EEG for a single player.
+        :param sample_frequency: Sampling rate (Hz) used to convert samples to seconds for `tmin`/`tmax`.
+        :param detrend: Detrending parameter passed to `mne.Epochs`.
+        :returns: Epoched data with `baseline=None`.
+        """
         onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
 
         prestim_samp = math.ceil(0.2 * sample_frequency)  # 410
@@ -326,18 +456,32 @@ class Subject:
         tmin = -prestim_samp / sample_frequency
         tmax = poststim_samp / sample_frequency
 
-        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None, detrend=detrend)
+        epochs = mne.Epochs(raw,
+                            events,
+                            event_id={"trial_start": 1},
+                            tmin=tmin,
+                            tmax=tmax,
+                            baseline=None,
+                            detrend=detrend)
         return epochs
 
     def interpolate(self, epochs, player_meta, label):
-        """
-        Closer match to FieldTrip ft_channelrepair(method='weighted'):
+        """Repair bad channels using weighted neighbour interpolation.
 
-        1. Build a full channel x channel repair matrix.
-        2. Replace each bad-channel row with inverse-distance weights on good neighbours.
-        3. Apply that same repair matrix to each epoch in one shot.
+        This is a closer match to FieldTrip's
+        `ft_channelrepair(method='weighted')`:
 
-        Operates in place on an MNE Epochs object.
+        1. Build a full `(n_channels, n_channels)` repair matrix.
+        2. Replace each bad-channel row with inverse-distance weights on good
+                neighbours.
+        3. Apply the same matrix to every epoch in one shot.
+
+        The operation is in-place on the provided `mne.Epochs` object.
+
+        :param epochs: Epoched data to repair.
+        :param player_meta: Player metadata containing the list `preprocessing_channels_fixed`.
+        :param label: Label used for logging.
+        :returns: `None`.
         """
         bads = [ch for ch in player_meta.preprocessing_channels_fixed if ch in epochs.ch_names]
         if not bads:
@@ -404,7 +548,15 @@ class Subject:
         print(f"  {label}: Interpolated {bads} with FieldTrip-style weighted neighbours")
 
     def save(self, ep1, ep2, output_dir):
-        """Saves the final Epochs objects to disk (MATLAB's save function)."""
+        """Save per-player epochs to disk.
+
+        Files are written as `pair-XX_player-<n>_task-RPS_eeg_epo.fif`.
+
+        :param ep1: Player 1 epochs.
+        :param ep2: Player 2 epochs.
+        :param output_dir: Output directory to write to.
+        :returns: `None`.
+        """
         pair_num = self.id.replace('sub-', '')
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -425,6 +577,16 @@ class BidsDataset:
     def get_from(bids_root: pathlib.Path,
                  output_path: pathlib.Path,
                  exclude_subjects: list[str] = ["sub-10", "sub-23", "sub-24"]) -> "BidsDataset":
+        """Load a `BidsDataset` from a BIDS root directory.
+
+        This reads `participants.tsv` and constructs `Subject` objects
+        for each row not listed in `exclude_subjects`.
+
+        :param bids_root: Root directory of the BIDS dataset.
+        :param output_path: Directory where derivatives will be saved.
+        :param exclude_subjects: Participant IDs to skip.
+        :returns: Dataset wrapper containing parsed subjects.
+        """
         subjects = []
         tsv_path = bids_root / "participants.tsv"
         with open(tsv_path, newline="") as tsvfile:
@@ -435,20 +597,35 @@ class BidsDataset:
                     subjects.append(Subject.from_tsv_row(bids_root, row))
         return BidsDataset(bids_root, subjects, output_path)
 
-    def preprocess(self) -> None:
+    def preprocess(self, filter: bool = False, drop_bad_channels: bool = False, detrend: bool = None) -> None:
+        """Run preprocessing for all subjects in the dataset.
+
+        :param filter: If `True`, apply a 1-35 Hz band-pass filter.
+        :param drop_bad_channels: If `True`, drop channels marked as bad rather than interpolating them.
+        :param detrend: Detrending parameter passed to `mne.Epochs`.
+        :returns: `None`.
+        """
         print(f"Starting preprocessing for {len(self.subjects)} subjects.")
         print(f"Outputting processed data to: {self.output_path}")
 
         sub_completed = []
         for subject in self.subjects:
             if subject.id not in sub_completed:
-                subject.preprocess(self.bids_root, self.output_path)
-        # self.average_results()
+                subject.preprocess(self.bids_root,
+                                   self.output_path,
+                                   filter=filter,
+                                   drop_bad_channels=drop_bad_channels,
+                                   detrend=detrend)
 
     def inspect_derivatives(self) -> None:
-        """
-        Loads the saved epochs for the first processed subject and plots the
-        Evoked Response (ERP) with Global Field Power (GFP) to check data quality.
+        """Inspect the saved derivative epochs for a quick quality check.
+
+        This loads the first subject's saved epochs, computes the evoked response, and plots:
+
+        - ERP time series for all channels with Global Field Power (GFP)
+        - Topographic maps at selected time points
+
+        :returns: `None`.
         """
         if not self.subjects:
             print("No subjects available to inspect.")
@@ -495,12 +672,15 @@ class BidsDataset:
             print(f"An error occurred during inspection: {e}")
             return
 
-    def average_results(self) -> None:
-        # Placeholder: implement averaging over time bins
-        raise NotImplementedError("average_results method not implemented yet.")
-
-
 def get_events_for_subject(bids_root: pathlib.Path, subject_id: str) -> list[Event]:
+    """Load per-trial event metadata for a subject.
+
+    Events are read from `<bids_root>/<subject_id>/eeg/<subject_id>_task-RPS_events.tsv`.
+
+    :param bids_root: Root directory of the BIDS dataset.
+    :param subject_id: Subject identifier (e.g. `"sub-01"`).
+    :returns: Parsed event list. Returns an empty list if the file is missing.
+    """
     events = []
     fname = bids_root / subject_id / "eeg" / f"{subject_id}_task-RPS_events.tsv"
     if fname.exists():

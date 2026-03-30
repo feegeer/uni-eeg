@@ -23,7 +23,9 @@ def main():
     bids_dataset = dataset.BidsDataset.get_from(data_setup.DATA_ROOT, data_setup.PREPROCESSED_DIR)
     if to_do_steps["preprocessing"]:
         print("Starting Preprocessing...")
-        bids_dataset.preprocess()
+        # Change the arguments to True (filter, drop_bad_epochs) or 1 (for detrend) if you want to modify the preprocessing
+        # Please do not forget to change the paths accordingly in this case, so that the previous results do not get overwritten
+        bids_dataset.preprocess(filter=True, drop_bad_channels=False, detrend=None)
         print("Preprocessing finished!")
     else:
         print("Preprocessing already completed!")
