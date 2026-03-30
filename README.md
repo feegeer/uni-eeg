@@ -179,6 +179,10 @@ uni-eeg/
 └── README.md                      # Intro & instructions to the project
 ```
 
+### Results Kaggle Dataset
+
+In case there is no time to run all the steps, we have uploaded the results from `data/results/` as a public [Kaggle dataset](https://www.kaggle.com/datasets/felpspotenza/resultseegproject).
+
 
 ## References
 

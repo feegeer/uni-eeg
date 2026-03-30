@@ -368,7 +368,7 @@ def build_behaviour_matrices(events: pd.DataFrame) -> tuple[np.ndarray, np.ndarr
 
 
 def baseline_correct(data: np.ndarray, times: np.ndarray) -> np.ndarray:
-    """Subtract mean of the [−0.2, 0] s window from each channel and trial."""
+    """Subtract mean of the [-0.2, 0] s window from each channel and trial."""
     bl_mask = (times >= -0.2) & (times <= 0)
     if bl_mask.sum() > 0:
         bl_mean = data[:, :, bl_mask].mean(axis=2, keepdims=True)
