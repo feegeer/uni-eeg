@@ -10,6 +10,9 @@ import decoding_visualization
 import markov_analysis
 import non_linear_decoding
 
+# If you would like to re-run the pipeline multiple times whithout overwriting previous iterations
+# of the data, change the following paths in data_setup.py:
+# PREPROCESSED_DIR, NON_LINEAR_DIR, LINEAR_DECODING_DIR
 
 def main():
     # 0. Setup Check
