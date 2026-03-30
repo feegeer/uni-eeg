@@ -11,5 +11,6 @@ dependencies = [
     "mne-bids==0.17.0",
     "mne-bids-pipeline==1.9.0",
     "scipy>=1.16.3",
+    "torch>=2.11.0",
     "yapf>=0.43.0",
 ]

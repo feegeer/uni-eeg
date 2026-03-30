@@ -6,7 +6,6 @@ This is a semester project for the EEG course at the University of Stuttgart. Ra
 
 **Team members:** Emma Feege, Felipe Potenza, Radu-Mihai Savancea
 
-
 ## What the Paper Does
 
 Moerel et al. recorded 64-channel EEG from 31 pairs of participants playing 480 rounds of Rock–Paper–Scissors. They used multivariate decoding (LDA via CoSMoMVPA) to ask whether the EEG signal contains information about:
@@ -17,7 +16,6 @@ Moerel et al. recorded 64-channel EEG from 31 pairs of participants playing 480 
 4. The opponent's response on the previous trial
 
 Key finding: players' own decisions were decodable from EEG during all task phases, and only overall match *losers* showed neural encoding of previous-trial information, suggesting that relying on past outcomes may hurt performance in a game where the optimal strategy is to be random.
-
 
 ## What We Do
 
@@ -33,14 +31,13 @@ The original paper used FieldTrip for preprocessing (epoching, bad channel inter
 
 The core decoding analysis (pseudo-trial construction, balanced cross-validation folds, channel searchlight) is re-implemented in Python, staying as close as possible to the CoSMoMVPA logic. This includes a faithful reimplementation of `cosmo_classify_lda` with its default regularisation ($\lambda = 0.01 \times \text{trace}(\Sigma)/p$), `cosmo_sample_unique` for balanced sampling, and `cosmo_chunkize` for fold assignment. The goal is to verify that the decoding results replicate before changing anything.
 
-### 4. Extend with additional classifiers and preprocessing 
+### 4. Extend with additional classifiers and preprocessing
 
 Once the reproduction is in place, we go further:
 
 - **Additional preprocessing**: we test the effect of bandpass filtering (1–70 Hz) and a 50 Hz notch filter, and re-examine their bad channel selections.
 - **Linear classifiers**: we benchmark the original LDA against three alternatives (Shrinkage LDA, Linear SVM, and L2-regularised Logistic Regression) on the exact same data and folds to test whether the decoding results are robust to classifier choice.
 - **Non-linear decoding with EEGNet**: we apply EEGNet, a convolutional neural network designed for EEG, as a fundamentally different decoding approach.
-
 
 ## Pipeline Overview
 
@@ -85,7 +82,6 @@ Raw BDF files (BioSemi 64ch, 2048 Hz)
 └──────────────────────────────────────┘
 ```
 
-
 ## Project Structure
 
 ```
@@ -109,7 +105,6 @@ uni-eeg/
 
 The `data/` directory is not tracked by git (too large). See the installation instructions below for how to obtain it.
 
-
 ## Installation
 
 **Requirements:** Python ≥ 3.12
@@ -120,7 +115,7 @@ git clone https://github.com/feegeer/uni-eeg.git
 cd uni-eeg
 git checkout development
 
-# Set up environment (we recommend uv, but pip works too)
+# Set up environment (we recommend uv (100x faster than pip plus you can choose the Python version), but pip works too (use uv and then just `uv sync`, it is much better!))
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
@@ -137,17 +132,16 @@ yapf -ir src
 ```
 
 ## Usage
- 
+
 After installing and downloading the data, run the full pipeline with:
- 
+
 ```bash
 python src/main.py
 ```
- 
+
 This will check the data folder structure, preprocess EEG data, run all decoding methods, perform Markov analysis, and save all results to `data/results/`. The script detects which steps have already been completed and skips them, so it is safe to re-run after interruptions.
 
 *Note*: Given the size of the dataset, each step can take from a few seconds up to multiple hours to run. The decoding methods are specially time-consuming.
- 
 
 ### Final Folder Structure with Data in Detail
 
@@ -183,19 +177,19 @@ uni-eeg/
 
 In case there is no time to run all the steps, we have uploaded the results from `data/results/` as a public [Kaggle dataset](https://www.kaggle.com/datasets/felpspotenza/resultseegproject).
 
-
 ## References
 
 **Paper:**
-> Moerel, D., Grootswagers, T., Chin, J. L. L., Ciardo, F., Nijhuis, P., Quek, G. L., Smit, S., & Varlet, M. (2025). Neural decoding of competitive decision-making in Rock–Paper–Scissors. *Social Cognitive and Affective Neuroscience, 20*(1), nsaf101. https://doi.org/10.1093/scan/nsaf101
+> Moerel, D., Grootswagers, T., Chin, J. L. L., Ciardo, F., Nijhuis, P., Quek, G. L., Smit, S., & Varlet, M. (2025). Neural decoding of competitive decision-making in Rock–Paper–Scissors. *Social Cognitive and Affective Neuroscience, 20*(1), nsaf101. <https://doi.org/10.1093/scan/nsaf101>
 
 **Dataset (OpenNeuro):**
-> https://doi.org/10.18112/openneuro.ds006761.v1.0.0
+> <https://doi.org/10.18112/openneuro.ds006761.v1.0.0>
 
 **Original analysis code (OSF):**
-> https://doi.org/10.17605/OSF.IO/YJXKN
+> <https://doi.org/10.17605/OSF.IO/YJXKN>
 
 **Key toolboxes used:**
+
 - [MNE-Python](https://mne.tools/) — EEG preprocessing and data handling
 - [scikit-learn](https://scikit-learn.org/) — LDA, SVM, and Logistic Regression classifiers
 - [EEGNet](https://eegnet.org/) — convolutional neural network for EEG decoding
