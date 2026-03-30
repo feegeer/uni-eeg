@@ -250,12 +250,12 @@ class Subject:
         del raw
         gc.collect()
 
-        # raw_p1.filter(l_freq=1.0, h_freq=35.0)
-        # raw_p2.filter(l_freq=1.0, h_freq=35.0)
+        raw_p1.filter(l_freq=1.0, h_freq=35.0)
+        raw_p2.filter(l_freq=1.0, h_freq=35.0)
 
         # 6. Epoch (MATLAB's ft_preprocessing with cfg.trl)
-        epochs_p1 = self.epoch_players(raw_p1)
-        epochs_p2 = self.epoch_players(raw_p2)
+        epochs_p1 = self.epoch_players(raw_p1, detrend=1)
+        epochs_p2 = self.epoch_players(raw_p2, detrend=1)
 
         del raw_p1, raw_p2
         gc.collect()
@@ -311,7 +311,7 @@ class Subject:
             player_raws.append(player_raw)
         return player_raws[0], player_raws[1]
 
-    def epoch_players(self, raw, sample_frequency: int = 2048):
+    def epoch_players(self, raw, sample_frequency: int = 2048, detrend: None | int = None) -> mne.Epochs:
         onset_samples = np.array([e.onset_sample for e in self.events], dtype=int)
 
         prestim_samp = math.ceil(0.2 * sample_frequency)  # 410
@@ -326,7 +326,7 @@ class Subject:
         tmin = -prestim_samp / sample_frequency
         tmax = poststim_samp / sample_frequency
 
-        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None)
+        epochs = mne.Epochs(raw, events, event_id={"trial_start": 1}, tmin=tmin, tmax=tmax, baseline=None, detrend=detrend)
         return epochs
 
     def interpolate(self, epochs, player_meta, label):
@@ -440,10 +440,8 @@ class BidsDataset:
         print(f"Outputting processed data to: {self.output_path}")
 
         sub_completed = []
-        for i in range(21, 35):
-            sub_completed.append(f"sub-{i:02d}")
         for subject in self.subjects:
-            if subject.id in sub_completed:
+            if subject.id not in sub_completed:
                 subject.preprocess(self.bids_root, self.output_path)
         # self.average_results()
 
