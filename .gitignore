@@ -11,6 +11,7 @@ wheels/
 
 # Other
 src/ds006761
-ds006761
+data/ds006761
+data/results
 *.pdf
 .vscode
