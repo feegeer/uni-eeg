@@ -95,9 +95,8 @@ uni-eeg/
 │   ├── non_linear_decoding.py     # Implements new EEGNet as the non-linear decoding method
 │   ├── eeg_visualization.py       # Plots EEGNet decoding results
 │   └── markov_analysis.py         # Markov analysis implementation
-├── report/                        # Final report + necessary images
-│   ├── images_report/             # Figures used in the report notebooks
-│   └── report.ipynb               # Main combined report
+├── images/                        # Figures used in the report notebooks 
+├── final_report.ipynb             # Notebook report                        
 ├── pyproject.toml                 # Python package config & dependencies
 ├── .style.yapf                    # Code formatting rules
 └── README.md                      # Intro & instructions to the project
@@ -156,9 +155,8 @@ uni-eeg/
 │   ├── non_linear_decoding.py     # Implements new EEGNet as the non-linear decoding method
 │   ├── eeg_visualization.py       # Plots EEGNet decoding results
 │   └── markov_analysis.py         # Markov analysis implementation
-├── report/                        # Final report + necessary images
-│   ├── images_report/             # Figures used in the report notebooks
-│   └── report.ipynb               # Main combined report
+├── images/                        # Figures used in the report notebooks 
+├── final_report.ipynb             # Notebook report   
 ├── data/                          # All data files (original dataset, reproduction, and contributions)
 │   ├── ds006761/                  # Original downloaded dataset
 │   ├── results/                   # Reproduction and contribution results
